@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Mood Shift City: Wave Protocol</title>
+    <title>Mood Shift City: Resource War</title>
     <style>
         body { margin:0; overflow:hidden; background:black; font-family:'Segoe UI', sans-serif; touch-action: none; }
         
@@ -66,7 +66,7 @@
 
 <div id="menu">
     <h1>MOOD SHIFT CITY</h1>
-    <p style="color:#00ffff;">SURVIVE THE WAVES</p>
+    <p style="color:#00ffff;">COLLECT DROPS TO SURVIVE</p>
     <button onclick="startGame()">START PROTOCOL</button>
 </div>
 
@@ -79,7 +79,7 @@
 <div id="ui" style="display:none;">
     HP: <span id="hp-val">100</span>% | AMMO: <span id="ammo-val">12</span>/<span id="reserve-val">48</span><br>
     SCORE: <span id="score-val">0</span> | <span id="wave-status">WAVE 1</span><br>
-    <span style="color:#0ff">ENEMIES LEFT: <span id="enemies-left">0</span></span>
+    <span style="color:#0ff">ENEMIES: <span id="enemies-left">0</span></span>
     <div id="reload-msg">LOW AMMO - PRESS R</div>
 </div>
 
@@ -120,6 +120,7 @@ const Sound = {
     },
     shoot() { this.play(400, 'square', 0.1, 0.05); },
     explode() { this.play(80, 'sawtooth', 0.4, 0.1); },
+    pickup() { this.play(800, 'sine', 0.1, 0.08); },
     reload() { this.play(200, 'triangle', 0.1, 0.03); }
 };
 
@@ -230,6 +231,57 @@ function init(){
     document.addEventListener("mousedown", () => { if(gameRunning && !isMobile) shoot(); });
 }
 
+// --- DROP SYSTEM ---
+function spawnDrop(pos) {
+    // 1. Calculate drop chance (standard 40%)
+    let dropChance = 0.4;
+    
+    // 2. Desperation check: If totally out of ammo, force a drop
+    if (ammo === 0 && reserve === 0) dropChance = 1.0;
+
+    if (Math.random() > dropChance) return; 
+    
+    let isHealth;
+
+    // 3. Status-Based Logic
+    if (hp >= 100) {
+        // If health is full, always drop ammo
+        isHealth = false;
+    } else if (reserve < 12) {
+        // If ammo is critically low, 80% chance for ammo
+        isHealth = Math.random() > 0.8;
+    } else {
+        // Otherwise, 50/50 split
+        isHealth = Math.random() > 0.5;
+    }
+    
+    let color = isHealth ? 0xff0000 : 0x00ffff;
+    
+    let dropMesh = new THREE.Mesh(
+        new THREE.BoxGeometry(0.5, 0.5, 0.5),
+        new THREE.MeshStandardMaterial({ color: color, emissive: color, emissiveIntensity: 0.8 })
+    );
+    dropMesh.position.set(pos.x, 0.5, pos.z);
+    scene.add(dropMesh);
+    drops.push({ mesh: dropMesh, type: isHealth ? 'hp' : 'ammo' });
+}
+
+function updateDrops() {
+    for (let i = drops.length - 1; i >= 0; i--) {
+        let d = drops[i];
+        d.mesh.rotation.y += 0.05;
+        d.mesh.position.y = 0.5 + Math.sin(Date.now() * 0.005) * 0.1; // Floating effect
+        
+        if (player.position.distanceTo(d.mesh.position) < 1.5) {
+            Sound.pickup();
+            if (d.type === 'hp') hp = Math.min(100, hp + 20);
+            else reserve += 24;
+            scene.remove(d.mesh);
+            drops.splice(i, 1);
+        }
+    }
+}
+
 // --- WAVE SYSTEM ---
 function startWave(num) {
     wave = num;
@@ -334,16 +386,24 @@ function animate(){
 
     for(let i=enemies.length-1; i>=0; i--){
         let e = enemies[i];
-        if(e.hp <= 0){ Sound.explode(); score += 25; scene.remove(e.mesh); enemies.splice(i,1); continue; }
+        if(e.hp <= 0){ 
+            Sound.explode(); 
+            score += 25; 
+            spawnDrop(e.mesh.position); // SPWAN DROP HERE
+            scene.remove(e.mesh); 
+            enemies.splice(i,1); 
+            continue; 
+        }
         let dir = player.position.clone().sub(e.mesh.position).normalize();
         e.mesh.position.add(dir.multiplyScalar(e.speed)); e.mesh.position.y = e.size;
         if(e.mesh.position.distanceTo(player.position) < 1.6) { hp -= 0.4; shakeAmount = 0.05; }
     }
 
-    // NEW WAVE TRIGGER
     if(enemies.length === 0 && enemiesToSpawn === 0 && !isWaveTransition) {
         startWave(wave + 1);
     }
+
+    updateDrops(); // CHECK FOR PICKUPS
 
     document.getElementById("hp-val").innerText = Math.max(0, Math.ceil(hp));
     document.getElementById("ammo-val").innerText = ammo;
