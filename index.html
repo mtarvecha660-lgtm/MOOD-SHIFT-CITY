@@ -46,41 +46,39 @@
         #reload-msg { color: #ffcc00; font-weight: bold; display: none; margin-top: 5px; animation: blink 0.5s infinite; }
         @keyframes blink { 50% { opacity: 0; } }
 
-        /* Rotate-to-portrait overlay */
+        /* Rotate Device Overlay */
         #rotate-overlay {
             display: none;
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: #000;
+            background: #000010;
             z-index: 9999;
             flex-direction: column;
             align-items: center; justify-content: center;
             color: white; text-align: center;
         }
-        #rotate-overlay svg {
-            width: 80px; height: 80px; margin-bottom: 20px;
+        #rotate-overlay .rotate-icon {
+            font-size: 80px;
             animation: rotateAnim 1.5s ease-in-out infinite;
+            display: block; margin-bottom: 20px;
+        }
+        #rotate-overlay p {
+            font-size: 20px; color: #00ffff;
+            letter-spacing: 2px; text-shadow: 0 0 10px #00ffff;
         }
         @keyframes rotateAnim {
             0%   { transform: rotate(0deg); }
-            40%  { transform: rotate(-90deg); }
-            60%  { transform: rotate(-90deg); }
+            40%  { transform: rotate(90deg); }
+            60%  { transform: rotate(90deg); }
             100% { transform: rotate(0deg); }
         }
-        #rotate-overlay h2 { font-size: 22px; margin: 0 0 8px; letter-spacing: 2px; color: #00ffff; }
-        #rotate-overlay p  { font-size: 14px; color: #aaa; }
     </style>
 </head>
 <body>
 
-<!-- Portrait-only overlay for mobile -->
+<!-- Rotate Device Overlay (mobile portrait only) -->
 <div id="rotate-overlay">
-    <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <rect x="25" y="10" width="50" height="80" rx="8" stroke="#00ffff" stroke-width="5"/>
-        <circle cx="50" cy="78" r="5" fill="#00ffff"/>
-        <path d="M38 30 L50 18 L62 30" stroke="#ff0040" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
-    </svg>
-    <h2>ROTATE YOUR PHONE</h2>
-    <p>This game requires portrait mode</p>
+    <span class="rotate-icon">📱</span>
+    <p>ROTATE YOUR DEVICE<br>TO LANDSCAPE</p>
 </div>
 
 <div id="menu">
@@ -146,41 +144,38 @@ const Sound = {
 
 function checkDevice() { isMobile = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0); }
 
-// --- Orientation & Fullscreen for mobile ---
+/* ── Landscape / Fullscreen for Mobile ── */
 function isLandscape() { return window.innerWidth > window.innerHeight; }
 
+function requestFullscreen() {
+    const el = document.documentElement;
+    const req = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen || el.msRequestFullscreen;
+    if (req) req.call(el).catch(() => {});
+    // Also try Screen Orientation API to lock landscape
+    if (screen.orientation && screen.orientation.lock) {
+        screen.orientation.lock('landscape').catch(() => {});
+    }
+}
+
 function updateOrientationOverlay() {
-    if (!isMobile) return;
+    if (!isMobile) return; // Desktop: never show overlay
     const overlay = document.getElementById('rotate-overlay');
-    if (isLandscape()) {
+    if (!isLandscape()) {
         overlay.style.display = 'flex';
-        if (gameRunning) gameRunning = false; // pause-like: stops animate loop
+        if (gameRunning) { gameRunning = false; } // Pause game in portrait
     } else {
         overlay.style.display = 'none';
-        // Resume if game was running before rotate
-        if (typeof _wasRunning !== 'undefined' && _wasRunning) {
-            gameRunning = true; _wasRunning = false; animate();
+        // Resume game if it was running before rotation
+        if (hp > 0 && scene && !gameRunning && document.getElementById('ui').style.display === 'block') {
+            gameRunning = true;
+            animate();
         }
     }
 }
 
-let _wasRunning = false;
-window.addEventListener('resize', () => {
-    camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    if (isMobile) {
-        if (isLandscape() && gameRunning) { _wasRunning = true; }
-        updateOrientationOverlay();
-    }
-});
+window.addEventListener('resize', updateOrientationOverlay);
+window.addEventListener('orientationchange', () => setTimeout(updateOrientationOverlay, 300));
 
-screen.orientation && screen.orientation.addEventListener('change', () => {
-    if (isMobile) {
-        if (!isLandscape() && _wasRunning) { gameRunning = true; _wasRunning = false; animate(); }
-        else if (isLandscape() && gameRunning) { _wasRunning = true; }
-        updateOrientationOverlay();
-    }
-});
 
 function checkCollision(pos, radius) {
     for (let b of buildings) {
@@ -314,19 +309,14 @@ function setupControls() {
 
 function startGame() {
     checkDevice();
-    if (audioCtx.state === 'suspended') audioCtx.resume();
-
-    // Mobile: request fullscreen + lock to portrait
     if (isMobile) {
-        const el = document.documentElement;
-        const reqFS = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen;
-        if (reqFS) reqFS.call(el).catch(() => {});
-        if (screen.orientation && screen.orientation.lock) {
-            screen.orientation.lock('portrait').catch(() => {});
+        requestFullscreen();
+        if (!isLandscape()) {
+            updateOrientationOverlay();
+            return; // Don't start until landscape
         }
-        updateOrientationOverlay();
     }
-
+    if (audioCtx.state === 'suspended') audioCtx.resume();
     document.getElementById("menu").style.display = "none";
     document.getElementById("ui").style.display = "block";
     document.getElementById("crosshair").style.display = "block";
