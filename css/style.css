@@ -1,0 +1,77 @@
+/* ── Base ── */
+body { margin:0; overflow:hidden; background:black; font-family:'Segoe UI', sans-serif; touch-action: none; }
+
+/* ── HUD ── */
+#ui {
+    position:absolute; top:10px; left:10px; color:white; z-index:5;
+    font-size:18px; text-shadow: 0 0 10px #000; font-weight: bold;
+    background: rgba(0,0,0,0.7); padding: 15px; border-radius: 8px; pointer-events: none;
+    border: 1px solid #333;
+}
+
+/* ── Touch Controls ── */
+.touch-controls { display: none; }
+.touch-btn {
+    position: absolute; bottom: 30px; right: 30px;
+    width: 90px; height: 90px; background: rgba(255, 0, 64, 0.3);
+    border: 3px solid #ff0040; border-radius: 50%; z-index: 15;
+    display: flex; align-items: center; justify-content: center;
+    color: white; font-weight: bold; user-select: none;
+}
+#reload-btn { right: 140px; width: 70px; height: 70px; bottom: 40px; font-size: 12px; background: rgba(0, 255, 255, 0.2); border-color: #00ffff; }
+#joystick-container {
+    position: absolute; bottom: 30px; left: 30px;
+    width: 140px; height: 140px; background: rgba(255, 255, 255, 0.1);
+    border: 2px solid rgba(255,255,255,0.3); border-radius: 50%; z-index: 15;
+}
+#joystick-knob {
+    position: absolute; top: 45px; left: 45px;
+    width: 50px; height: 50px; background: #00ffff;
+    border-radius: 50%; box-shadow: 0 0 15px #00ffff;
+}
+
+/* ── Screens ── */
+#menu, #gameover {
+    position:absolute; top:0; left:0; width:100%; height:100%;
+    display:flex; align-items:center; justify-content:center;
+    background:radial-gradient(circle, #001a33 0%, #000000 100%); color:white; flex-direction:column; z-index:20;
+}
+button { padding:20px 50px; font-size:22px; cursor:pointer; background:#ff0040; color:white; border:none; border-radius:8px; box-shadow: 0 0 20px #ff0040; }
+
+/* ── Crosshair ── */
+#crosshair {
+    position:absolute; top:50%; left:50%;
+    width:20px; height:20px; margin-left:-10px; margin-top:-10px;
+    border:2px solid #00ffff; border-radius:50%; z-index:5; pointer-events:none;
+}
+#crosshair::after { content:''; position:absolute; top:9px; left:9px; width:2px; height:2px; background:#00ffff; }
+
+/* ── Reload warning ── */
+#reload-msg { color: #ffcc00; font-weight: bold; display: none; margin-top: 5px; animation: blink 0.5s infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+
+/* ── Rotate Device Overlay (mobile portrait) ── */
+#rotate-overlay {
+    display: none;
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: #000010;
+    z-index: 9999;
+    flex-direction: column;
+    align-items: center; justify-content: center;
+    color: white; text-align: center;
+}
+#rotate-overlay .rotate-icon {
+    font-size: 80px;
+    animation: rotateAnim 1.5s ease-in-out infinite;
+    display: block; margin-bottom: 20px;
+}
+#rotate-overlay p {
+    font-size: 20px; color: #00ffff;
+    letter-spacing: 2px; text-shadow: 0 0 10px #00ffff;
+}
+@keyframes rotateAnim {
+    0%   { transform: rotate(0deg); }
+    40%  { transform: rotate(90deg); }
+    60%  { transform: rotate(90deg); }
+    100% { transform: rotate(0deg); }
+}
