@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Mood Shift City: Resource War</title>
+    <title>Mood Shift City: Ultimate Protocol</title>
     <style>
         body { margin:0; overflow:hidden; background:black; font-family:'Segoe UI', sans-serif; touch-action: none; }
         
@@ -13,6 +13,7 @@
             background: rgba(0,0,0,0.6); padding: 10px; border-radius: 8px; pointer-events: none;
         }
 
+        /* PC hides touch-controls via logic, but CSS ensures they look right */
         .touch-controls { display: none; }
         .touch-btn {
             position: absolute; bottom: 30px; right: 30px;
@@ -22,6 +23,7 @@
             color: white; font-weight: bold; user-select: none;
         }
         #reload-btn { right: 130px; width: 60px; height: 60px; bottom: 40px; font-size: 10px; }
+        
         #joystick-container {
             position: absolute; bottom: 30px; left: 30px;
             width: 120px; height: 120px; background: rgba(255, 255, 255, 0.1);
@@ -49,6 +51,7 @@
             background:radial-gradient(circle, #1a1a2e 0%, #000000 100%); color:white; flex-direction:column; z-index:20;
         }
         button { padding:15px 40px; font-size:18px; cursor:pointer; background:#ff0040; color:white; border:none; border-radius:8px; }
+        
         #crosshair {
             position:absolute; top:50%; left:50%;
             width:12px; height:12px; margin-left:-6px; margin-top:-6px;
@@ -66,7 +69,7 @@
 
 <div id="menu">
     <h1>MOOD SHIFT CITY</h1>
-    <p style="color:#00ffff;">COLLECT DROPS TO SURVIVE</p>
+    <p style="color:#00ffff;">SMART AI & RESOURCE MANAGEMENT</p>
     <button onclick="startGame()">START PROTOCOL</button>
 </div>
 
@@ -79,7 +82,7 @@
 <div id="ui" style="display:none;">
     HP: <span id="hp-val">100</span>% | AMMO: <span id="ammo-val">12</span>/<span id="reserve-val">48</span><br>
     SCORE: <span id="score-val">0</span> | <span id="wave-status">WAVE 1</span><br>
-    <span style="color:#0ff">ENEMIES: <span id="enemies-left">0</span></span>
+    <span style="color:#0ff">TARGETS: <span id="enemies-left">0</span></span>
     <div id="reload-msg">LOW AMMO - PRESS R</div>
 </div>
 
@@ -105,6 +108,7 @@ let wave = 0, enemiesToSpawn = 0, isWaveTransition = false;
 let joystick = { active: false, x: 0, y: 0, touchId: null };
 let lookTouch = { active: false, id: null, lastX: 0, lastY: 0 };
 
+// AUDIO
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 const Sound = {
     play(freq, type, duration, vol) {
@@ -120,7 +124,7 @@ const Sound = {
     },
     shoot() { this.play(400, 'square', 0.1, 0.05); },
     explode() { this.play(80, 'sawtooth', 0.4, 0.1); },
-    pickup() { this.play(800, 'sine', 0.1, 0.08); },
+    pickup() { this.play(800, 'sine', 0.15, 0.08); },
     reload() { this.play(200, 'triangle', 0.1, 0.03); }
 };
 
@@ -137,6 +141,7 @@ function startGame() {
 
     if (isMobile) {
         document.querySelectorAll('.touch-controls').forEach(el => el.style.display = 'flex');
+        if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(()=>{});
     } else {
         document.body.requestPointerLock();
     }
@@ -231,36 +236,19 @@ function init(){
     document.addEventListener("mousedown", () => { if(gameRunning && !isMobile) shoot(); });
 }
 
-// --- DROP SYSTEM ---
+// --- SMART DROP SYSTEM ---
 function spawnDrop(pos) {
-    // 1. Calculate drop chance (standard 40%)
     let dropChance = 0.4;
-    
-    // 2. Desperation check: If totally out of ammo, force a drop
-    if (ammo === 0 && reserve === 0) dropChance = 1.0;
-
+    if (ammo === 0 && reserve === 0) dropChance = 1.0; // Desperation
     if (Math.random() > dropChance) return; 
-    
-    let isHealth;
 
-    // 3. Status-Based Logic
-    if (hp >= 100) {
-        // If health is full, always drop ammo
-        isHealth = false;
-    } else if (reserve < 12) {
-        // If ammo is critically low, 80% chance for ammo
-        isHealth = Math.random() > 0.8;
-    } else {
-        // Otherwise, 50/50 split
-        isHealth = Math.random() > 0.5;
-    }
+    let isHealth;
+    if (hp >= 100) isHealth = false; 
+    else if (reserve < 12) isHealth = Math.random() > 0.8;
+    else isHealth = Math.random() > 0.5;
     
     let color = isHealth ? 0xff0000 : 0x00ffff;
-    
-    let dropMesh = new THREE.Mesh(
-        new THREE.BoxGeometry(0.5, 0.5, 0.5),
-        new THREE.MeshStandardMaterial({ color: color, emissive: color, emissiveIntensity: 0.8 })
-    );
+    let dropMesh = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), new THREE.MeshStandardMaterial({ color: color, emissive: color, emissiveIntensity: 0.8 }));
     dropMesh.position.set(pos.x, 0.5, pos.z);
     scene.add(dropMesh);
     drops.push({ mesh: dropMesh, type: isHealth ? 'hp' : 'ammo' });
@@ -270,8 +258,7 @@ function updateDrops() {
     for (let i = drops.length - 1; i >= 0; i--) {
         let d = drops[i];
         d.mesh.rotation.y += 0.05;
-        d.mesh.position.y = 0.5 + Math.sin(Date.now() * 0.005) * 0.1; // Floating effect
-        
+        d.mesh.position.y = 0.5 + Math.sin(Date.now() * 0.005) * 0.1;
         if (player.position.distanceTo(d.mesh.position) < 1.5) {
             Sound.pickup();
             if (d.type === 'hp') hp = Math.min(100, hp + 20);
@@ -288,18 +275,13 @@ function startWave(num) {
     enemiesToSpawn = 3 + (num * 2);
     isWaveTransition = true;
     document.getElementById("wave-status").innerText = "PREPARING...";
-    
     setTimeout(() => {
         if(!gameRunning) return;
         isWaveTransition = false;
         document.getElementById("wave-status").innerText = "WAVE " + wave;
         let spawner = setInterval(() => {
-            if(enemiesToSpawn > 0 && gameRunning) {
-                spawnEnemy();
-                enemiesToSpawn--;
-            } else {
-                clearInterval(spawner);
-            }
+            if(enemiesToSpawn > 0 && gameRunning) { spawnEnemy(); enemiesToSpawn--; } 
+            else clearInterval(spawner);
         }, 1000);
     }, 2000);
 }
@@ -316,7 +298,11 @@ function spawnEnemy(){
     let mesh = new THREE.Mesh(new THREE.BoxGeometry(type.size, type.size*2, type.size), new THREE.MeshStandardMaterial({color: type.color, emissive: type.color, emissiveIntensity: 0.5}));
     mesh.position.set(ex, type.size, ez);
     scene.add(mesh);
-    enemies.push({mesh, hp: type.hp, speed: type.speed, size: type.size});
+    enemies.push({
+        mesh, hp: type.hp, speed: type.speed, size: type.size,
+        strafeDir: Math.random() > 0.5 ? 1 : -1,
+        nextStrafeChange: Date.now() + Math.random() * 2000
+    });
 }
 
 function reload(){
@@ -350,10 +336,7 @@ function resolveVsBuildingsXZ(pos, size){
 
 function animate(){
     if(!gameRunning) return;
-    if(hp <= 0) { 
-        gameRunning = false; document.getElementById("gameover").style.display="flex"; 
-        document.getElementById("final-score").innerText = score; return; 
-    }
+    if(hp <= 0) { gameRunning = false; document.getElementById("gameover").style.display="flex"; document.getElementById("final-score").innerText = score; return; }
     requestAnimationFrame(animate);
 
     let sp = 0.16;
@@ -375,35 +358,40 @@ function animate(){
     if(shakeAmount > 0) { camera.position.x += (Math.random()-0.5)*shakeAmount; camera.position.y += (Math.random()-0.5)*shakeAmount; shakeAmount *= 0.85; }
     camera.rotation.set(pitch, yaw, 0, 'YXZ');
 
+    // Bullets
     for(let i=bullets.length-1; i>=0; i--){
         let b=bullets[i]; b.mesh.position.add(b.dir.clone().multiplyScalar(1.6)); b.dist += 1.6;
         let hit = false;
-        for(let e of enemies){ 
-            if(e.mesh.position.distanceTo(b.mesh.position) < (e.size+0.4)){ e.hp -= 50; hit = true; break; } 
-        }
+        for(let e of enemies){ if(e.mesh.position.distanceTo(b.mesh.position) < (e.size+0.4)){ e.hp -= 50; hit = true; break; } }
         if(hit || b.dist > 100) { scene.remove(b.mesh); bullets.splice(i, 1); }
     }
 
+    // Smart AI Enemies
     for(let i=enemies.length-1; i>=0; i--){
         let e = enemies[i];
         if(e.hp <= 0){ 
-            Sound.explode(); 
-            score += 25; 
-            spawnDrop(e.mesh.position); // SPWAN DROP HERE
-            scene.remove(e.mesh); 
-            enemies.splice(i,1); 
-            continue; 
+            Sound.explode(); score += 25; spawnDrop(e.mesh.position); 
+            scene.remove(e.mesh); enemies.splice(i,1); continue; 
         }
-        let dir = player.position.clone().sub(e.mesh.position).normalize();
-        e.mesh.position.add(dir.multiplyScalar(e.speed)); e.mesh.position.y = e.size;
+        
+        let toPlayer = player.position.clone().sub(e.mesh.position).normalize();
+        if (Date.now() > e.nextStrafeChange) {
+            e.strafeDir *= -1; e.nextStrafeChange = Date.now() + 1000 + Math.random()*2000;
+        }
+        let strafeVec = new THREE.Vector3(-toPlayer.z, 0, toPlayer.x);
+        let moveVec = toPlayer.multiplyScalar(e.speed);
+        let strafeSpeed = (e.size < 1) ? e.speed * 1.2 : e.speed * 0.5;
+        moveVec.add(strafeVec.multiplyScalar(e.strafeDir * strafeSpeed));
+        
+        e.mesh.position.add(moveVec);
+        e.mesh.position.y = e.size;
+        e.mesh.lookAt(player.position.x, e.size, player.position.z);
         if(e.mesh.position.distanceTo(player.position) < 1.6) { hp -= 0.4; shakeAmount = 0.05; }
     }
 
-    if(enemies.length === 0 && enemiesToSpawn === 0 && !isWaveTransition) {
-        startWave(wave + 1);
-    }
+    if(enemies.length === 0 && enemiesToSpawn === 0 && !isWaveTransition) startWave(wave + 1);
 
-    updateDrops(); // CHECK FOR PICKUPS
+    updateDrops();
 
     document.getElementById("hp-val").innerText = Math.max(0, Math.ceil(hp));
     document.getElementById("ammo-val").innerText = ammo;
