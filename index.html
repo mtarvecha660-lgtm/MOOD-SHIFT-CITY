@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Mood Shift City: Ultra Vis</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<!-- Rotate Device Overlay (mobile portrait only) -->
+<div id="rotate-overlay">
+    <span class="rotate-icon">📱</span>
+    <p>ROTATE YOUR DEVICE<br>TO LANDSCAPE</p>
+</div>
+
+<!-- Main Menu -->
+<div id="menu">
+    <h1 style="letter-spacing: 5px;">MOOD SHIFT CITY</h1>
+    <p style="color:#00ffff; margin-bottom: 30px;">HIGH-VIS PROTOCOL ENABLED</p>
+    <button onclick="startGame()">START SYSTEM</button>
+</div>
+
+<!-- Game Over -->
+<div id="gameover" style="display:none;">
+    <h1 style="color:#ff3040;">SIGNAL TERMINATED</h1>
+    <p>Data Collected: <span id="final-score">0</span></p>
+    <button onclick="location.reload()">REBOOT</button>
+</div>
+
+<!-- HUD -->
+<div id="ui" style="display:none;">
+    HP: <span id="hp-val" style="color:#ff0040;">100</span>% | AMMO: <span id="ammo-val" style="color:#00ffff;">12</span>/<span id="reserve-val">48</span><br>
+    SCORE: <span id="score-val">0</span> | <span id="wave-status" style="color:#ffff00;">WAVE 1</span><br>
+    <span style="color:#0ff">ENEMIES: <span id="enemies-left">0</span></span>
+    <div id="reload-msg">RELOAD REQUIRED (R)</div>
+</div>
+
+<!-- Touch Controls -->
+<div id="joystick-container" class="touch-controls"><div id="joystick-knob"></div></div>
+<div id="fire-btn"   class="touch-controls touch-btn">FIRE</div>
+<div id="reload-btn" class="touch-controls touch-btn">RELOAD</div>
+
+<!-- Crosshair -->
+<div id="crosshair" style="display:none;"></div>
+
+<!-- Scripts (load order matters: state → mobile → controls → game) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="js/state.js"></script>
+<script src="js/mobile.js"></script>
+<script src="js/controls.js"></script>
+<script src="js/game.js"></script>
+
+</body>
+</html>
