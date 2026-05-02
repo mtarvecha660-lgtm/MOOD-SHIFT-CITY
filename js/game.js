@@ -1,40 +1,16 @@
 // ── js/game.js ──
-// World setup, game loop, enemies, bullets, particles, drops, waves, HUD.
+// Optimized with Object Pooling, Performance Monitoring, and Difficulty Scaling
 
-// ── World helpers ──
-
-function checkCollision(pos, radius) {
-    for (let b of buildings) {
-        if (pos.x + radius > b.minX && pos.x - radius < b.maxX &&
-            pos.z + radius > b.minZ && pos.z - radius < b.maxZ &&
-            pos.y < b.maxY) return true;
-    }
-    return false;
-}
-
-function createImpact(pos, color, count = 8) {
-    for (let i = 0; i < count; i++) {
-        let p = particles.find(p => !p.active);
-        if (!p) break;
-        p.active = true; p.mesh.visible = true; p.life = 1.0;
-        p.mesh.position.copy(pos);
-        p.mesh.material.color.setHex(color);
-        p.velocity.set(
-            (Math.random() - 0.5) * 0.4,
-            (Math.random() - 0.2) * 0.4,
-            (Math.random() - 0.5) * 0.4
-        );
-    }
-}
-
-// ── Scene init ──
+let lastFrameTime = 0;
+let fpsDisplayTime = 0;
+let currentFPS = 0;
 
 function init() {
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0x000005);
     scene.fog = new THREE.FogExp2(0x000011, 0.04);
 
-    camera   = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
     renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     document.body.appendChild(renderer.domElement);
@@ -54,26 +30,43 @@ function init() {
 
     // Buildings
     for (let i = 0; i < 40; i++) {
-        let bh     = Math.random() * 20 + 10;
+        let bh = Math.random() * 20 + 10;
         let bColor = Math.random() > 0.5 ? 0x111111 : 0x1a1a1a;
-        let mesh   = new THREE.Mesh(
+        let mesh = new THREE.Mesh(
             new THREE.BoxGeometry(5, bh, 5),
-            new THREE.MeshStandardMaterial({ color: bColor, emissive: 0x000000 })
+            new THREE.MeshStandardMaterial({ color: bColor })
         );
         let bx = Math.random() * 200 - 100, bz = Math.random() * 200 - 100;
         if (Math.abs(bx) < 15 && Math.abs(bz) < 15) bx += 25;
         mesh.position.set(bx, bh / 2, bz);
         scene.add(mesh);
         buildings.push({ minX: bx - 2.5, maxX: bx + 2.5, minY: 0, maxY: bh, minZ: bz - 2.5, maxZ: bz + 2.5 });
-
-        if (Math.random() > 0.3) {
-            let win = new THREE.PointLight(Math.random() > 0.5 ? 0xff0040 : 0x00ffff, 1, 15);
-            win.position.set(bx, bh * 0.8, bz);
-            scene.add(win);
-        }
     }
 
-    // Particle pool
+    // --- OBJECT POOLING INITIALIZATION ---
+    
+    // Bullet Pool
+    const bGeo = new THREE.SphereGeometry(0.2, 8, 8);
+    const bMat = new THREE.MeshBasicMaterial({ color: 0x00ffff });
+    for (let i = 0; i < 50; i++) {
+        let mesh = new THREE.Mesh(bGeo, bMat);
+        mesh.visible = false;
+        scene.add(mesh);
+        bullets.push({ mesh, dir: new THREE.Vector3(), dist: 0, active: false });
+    }
+
+    // Enemy Pool[cite: 3, 5]
+    for (let i = 0; i < 30; i++) {
+        let mesh = new THREE.Mesh(
+            new THREE.BoxGeometry(1, 1, 1),
+            new THREE.MeshStandardMaterial({ color: 0xff0040, emissive: 0xff0040, emissiveIntensity: 0.8 })
+        );
+        mesh.visible = false;
+        scene.add(mesh);
+        enemies.push({ mesh, active: false, hp: 100, speed: 0, size: 1 });
+    }
+
+    // Particle pool[cite: 3, 5]
     const pGeo = new THREE.SphereGeometry(PARTICLE_SIZE, 4, 4);
     for (let i = 0; i < MAX_PARTICLES; i++) {
         const pMesh = new THREE.Mesh(pGeo, new THREE.MeshBasicMaterial({ color: 0xffffff }));
@@ -82,34 +75,210 @@ function init() {
         particles.push({ mesh: pMesh, velocity: new THREE.Vector3(), active: false, life: 0 });
     }
 
-    // Player
     player = new THREE.Object3D();
     player.position.set(0, 1.8, 0);
     scene.add(player);
 
-    setupControls();
+    setupControls();[cite: 3, 6]
 }
 
-// ── Weapons ──
+// ── Optimized Weapon (Pooling) ──
 
 function shoot() {
     if (!gameRunning || isReloading || ammo <= 0) return;
     const now = performance.now();
     if (now - lastShotTime < SHOOT_COOLDOWN) return;
-    ammo--; lastShotTime = now; Sound.shoot(); shakeAmount = 0.12;
 
-    let bullet = new THREE.Mesh(
-        new THREE.SphereGeometry(0.2, 8, 8),
-        new THREE.MeshBasicMaterial({ color: 0x00ffff })
-    );
-    bullet.position.copy(player.position);
-    let dir = new THREE.Vector3(
+    // Find inactive bullet from pool
+    let bullet = bullets.find(b => !b.active);
+    if (!bullet) return;
+
+    ammo--; 
+    lastShotTime = now; 
+    Sound.shoot();[cite: 5]
+    shakeAmount = 0.12;
+
+    bullet.active = true;
+    bullet.mesh.visible = true;
+    bullet.mesh.position.copy(player.position);
+    bullet.dist = 0;
+    bullet.dir.set(
         -Math.sin(yaw) * Math.cos(pitch),
          Math.sin(pitch),
         -Math.cos(yaw) * Math.cos(pitch)
     ).normalize();
-    bullets.push({ mesh: bullet, dir, dist: 0 });
-    scene.add(bullet);
+}
+
+// ── Optimized Enemy Spawning (Pooling & Scaling) ──
+
+function spawnEnemy() {
+    let enemy = enemies.find(e => !e.active);
+    if (!enemy) return;
+
+    let angle = Math.random() * Math.PI * 2, dist = 30 + Math.random() * 20;
+    let ex = player.position.x + Math.cos(angle) * dist;
+    let ez = player.position.z + Math.sin(angle) * dist;
+
+    // Difficulty Scaling Logic
+    let difficultyMultiplier = 1 + (wave * 0.1); 
+    let typeRoll = Math.random();
+    let type = { color: 0xff0040, hp: 100 * difficultyMultiplier, speed: 0.08 * difficultyMultiplier, size: 1.2 };
+    
+    if (typeRoll > 0.8) type = { color: 0xaa00ff, hp: 400 * difficultyMultiplier, speed: 0.05 * difficultyMultiplier, size: 2.2 };
+    
+    enemy.active = true;
+    enemy.mesh.visible = true;
+    enemy.hp = type.hp;
+    enemy.speed = type.speed;
+    enemy.size = type.size;
+    enemy.mesh.scale.set(type.size, type.size, type.size);
+    enemy.mesh.material.color.setHex(type.color);
+    enemy.mesh.material.emissive.setHex(type.color);
+    enemy.mesh.position.set(ex, type.size * 0.9, ez);
+    enemy.strafeDir = Math.random() > 0.5 ? 1 : -1;
+}
+
+// ── Game Loop with Performance Monitoring ──
+
+function animate(now) {
+    if (!gameRunning) return;
+    if (hp <= 0) {
+        gameRunning = false;
+        document.getElementById('gameover').style.display = 'flex';[cite: 1]
+        document.getElementById('final-score').innerText = score;
+        return;
+    }
+    requestAnimationFrame(animate);
+
+    // FPS Calculation
+    const dt = now - lastFrameTime;
+    lastFrameTime = now;
+    if (now > fpsDisplayTime + 500) {
+        currentFPS = Math.round(1000 / dt);
+        fpsDisplayTime = now;
+    }
+
+    // Player Movement[cite: 3]
+    let sp = 0.2, pSize = 0.7;
+    let fw = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
+    let rt = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
+    let mX = 0, mZ = 0;
+    
+    if (!isMobile) {
+        if (keys['w']) { mX += fw.x * sp; mZ += fw.z * sp; }
+        if (keys['s']) { mX -= fw.x * sp; mZ -= fw.z * sp; }
+        if (keys['a']) { mX -= rt.x * sp; mZ -= rt.z * sp; }
+        if (keys['d']) { mX += rt.x * sp; mZ += rt.z * sp; }
+    } else if (joystick.active) {
+        mX = (fw.x * -joystick.y + rt.x * joystick.x) * sp;
+        mZ = (fw.z * -joystick.y + rt.z * joystick.x) * sp;
+    }
+    player.position.x += mX; if (checkCollision(player.position, pSize)) player.position.x -= mX;
+    player.position.z += mZ; if (checkCollision(player.position, pSize)) player.position.z -= mZ;
+
+    // Camera[cite: 3]
+    camera.position.copy(player.position);
+    if (shakeAmount > 0) {
+        camera.position.x += (Math.random() - 0.5) * shakeAmount;
+        camera.position.y += (Math.random() - 0.5) * shakeAmount;
+        shakeAmount *= 0.88;
+    }
+    camera.rotation.set(pitch, yaw, 0, 'YXZ');
+
+    // Bullets (Optimized Pool Update)[cite: 3]
+    bullets.forEach(b => {
+        if (!b.active) return;
+        let nextPos = b.mesh.position.clone().add(b.dir.clone().multiplyScalar(2.0));
+
+        if (checkCollision(nextPos, 0.2) || b.dist > 150) {
+            if (b.dist <= 150) createImpact(nextPos, 0x00ffff, 6);
+            b.active = false; b.mesh.visible = false;
+            return;
+        }
+
+        for (let e of enemies) {
+            if (!e.active) continue;
+            let r = e.size / 2 + 0.4;
+            if (nextPos.distanceTo(e.mesh.position) < r) {
+                e.hp -= 50; 
+                createImpact(nextPos, 0xff0040, 12);
+                b.active = false; b.mesh.visible = false;
+                break;
+            }
+        }
+        if (b.active) {
+            b.mesh.position.copy(nextPos);
+            b.dist += 2.0;
+        }
+    });
+
+    // Enemy AI (Optimized Pool Update)[cite: 3]
+    let activeEnemies = 0;
+    enemies.forEach(e => {
+        if (!e.active) return;
+        activeEnemies++;
+
+        if (e.hp <= 0) {
+            Sound.explode(); score += 50;[cite: 5]
+            createImpact(e.mesh.position, e.mesh.material.color.getHex(), 20);
+            if (Math.random() > 0.5) spawnDrop(e.mesh.position);
+            e.active = false; e.mesh.visible = false;
+            return;
+        }
+
+        let distToPlayer = e.mesh.position.distanceTo(player.position);
+        let toP = player.position.clone().sub(e.mesh.position).normalize();
+        let sV = new THREE.Vector3(-toP.z, 0, toP.x);
+        let moveX = (toP.x * e.speed) + (sV.x * e.strafeDir * e.speed * 0.4);
+        let moveZ = (toP.z * e.speed) + (sV.z * e.strafeDir * e.speed * 0.4);
+
+        e.mesh.position.x += moveX;
+        if (checkCollision(e.mesh.position, e.size / 2)) e.mesh.position.x -= moveX;
+        e.mesh.position.z += moveZ;
+        if (checkCollision(e.mesh.position, e.size / 2)) e.mesh.position.z -= moveZ;
+
+        e.mesh.lookAt(player.position.x, e.mesh.position.y, player.position.z);
+        if (distToPlayer < 1.8) { 
+            hp -= 0.5; 
+            shakeAmount = 0.08; 
+            createImpact(player.position, 0xffffff, 2); 
+        }
+    });
+
+    // Wave Progression Logic[cite: 3]
+    if (activeEnemies === 0 && enemiesToSpawn === 0 && !isWaveTransition) startWave(wave + 1);
+
+    updateUI();[cite: 3]
+    renderer.render(scene, camera);
+}
+
+function updateUI() {
+    document.getElementById('hp-val').innerText = Math.max(0, Math.ceil(hp));
+    document.getElementById('ammo-val').innerText = ammo;
+    document.getElementById('reserve-val').innerText = reserve;
+    document.getElementById('score-val').innerText = `${score} | FPS: ${currentFPS}`;[cite: 3]
+    document.getElementById('enemies-left').innerText = enemies.filter(e => e.active).length + enemiesToSpawn;
+}
+
+// ── Support functions remain mostly unchanged ──[cite: 3]
+function checkCollision(pos, radius) {
+    for (let b of buildings) {
+        if (pos.x + radius > b.minX && pos.x - radius < b.maxX &&
+            pos.z + radius > b.minZ && pos.z - radius < b.maxZ &&
+            pos.y < b.maxY) return true;
+    }
+    return false;
+}
+
+function createImpact(pos, color, count = 8) {
+    for (let i = 0; i < count; i++) {
+        let p = particles.find(p => !p.active);
+        if (!p) break;
+        p.active = true; p.mesh.visible = true; p.life = 1.0;
+        p.mesh.position.copy(pos);
+        p.mesh.material.color.setHex(color);
+        p.velocity.set((Math.random() - 0.5) * 0.4, (Math.random() - 0.2) * 0.4, (Math.random() - 0.5) * 0.4);
+    }
 }
 
 function reload() {
