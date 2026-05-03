@@ -341,7 +341,8 @@ body {
 #crosshair::after { content: ''; position: absolute; top: 9px; left: 9px; width: 2px; height: 2px; background: #00ffff; }
 
 /* ── Reload warning ── */
-#reload-msg { color: #ffcc00; font-weight: bold; display: none; margin-top: 5px; animation: blink 0.5s infinite; }
+#reload-msg { color: #ffcc00; font-weight: bold; display: none; margin-top: 5px; animation: blink 0.5s infinite; pointer-events: auto; cursor: pointer; padding: 3px 8px; border: 1px solid rgba(255,204,0,0.4); border-radius: 4px; }
+#reload-msg:hover { background: rgba(255,204,0,0.15); }
 @keyframes blink { 50% { opacity: 0; } }
 
 /* ── Rotate Device Overlay ── */
