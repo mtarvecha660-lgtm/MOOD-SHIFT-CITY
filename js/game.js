@@ -48,6 +48,68 @@ const CODEX_DATA = {
             perks: ['Ultra-fast movement', '85ms fire cooldown', '20-round clip · 72 reserve']
         }
     ],
+    drops: [
+        {
+            id: 'hp', color: 0xff3040, hex: '#ff3040', modelShape: 'sphere', modelSize: 0.55,
+            name: 'HP PACK', tag: 'INSTANT HEAL',
+            desc: 'Restores 40 HP on contact. Highest priority pickup when your health is critical — never pass one up below 50%.',
+            stats: [
+                { label: 'HEAL',   val: 7,  color: '#ff4466' },
+                { label: 'RARITY', val: 6,  color: '#ffff00' },
+                { label: 'RANGE',  val: 5,  color: '#00ffff' },
+                { label: 'TIMING', val: 10, color: '#ff8800' }
+            ],
+            perks: ['Instant +40 HP on pickup', 'Glows red — highly visible', 'Always collect when below 50% HP']
+        },
+        {
+            id: 'ammo', color: 0x00ffff, hex: '#00ffff', modelShape: 'sphere', modelSize: 0.5,
+            name: 'AMMO CRATE', tag: 'RESERVE REFILL',
+            desc: 'Refills your reserve ammunition. The smart drop system guarantees an ammo drop when you run critically low — you will never be left dry.',
+            stats: [
+                { label: 'FILL',   val: 9,  color: '#00ffff' },
+                { label: 'RARITY', val: 7,  color: '#ffff00' },
+                { label: 'RANGE',  val: 5,  color: '#00ffff' },
+                { label: 'TIMING', val: 10, color: '#ff8800' }
+            ],
+            perks: ['Refills full reserve ammo', 'Smart system guarantees supply', 'Cyan glow — easy to spot']
+        },
+        {
+            id: 'speed', color: 0xff00ff, hex: '#ff00ff', modelShape: 'sphere', modelSize: 0.45,
+            name: 'SPEED+', tag: '6s MOVEMENT BOOST',
+            desc: 'Dramatically increases movement speed for 6 seconds. Ideal for repositioning, chasing down drops, or escaping a surrounded situation.',
+            stats: [
+                { label: 'POWER',  val: 7,  color: '#ff00ff' },
+                { label: 'RARITY', val: 5,  color: '#ffff00' },
+                { label: 'RANGE',  val: 5,  color: '#00ffff' },
+                { label: 'TIMING', val: 6,  color: '#ff8800' }
+            ],
+            perks: ['+40% movement speed', '6 second active duration', 'Magenta screen tint while active']
+        },
+        {
+            id: 'shield', color: 0x0088ff, hex: '#0088ff', modelShape: 'sphere', modelSize: 0.55,
+            name: 'SHIELD', tag: '4s DAMAGE BLOCK',
+            desc: 'Absorbs all incoming damage for 4 seconds. The rarest drop — use it strategically when surrounded or facing a Tank.',
+            stats: [
+                { label: 'POWER',  val: 10, color: '#0088ff' },
+                { label: 'RARITY', val: 3,  color: '#ffff00' },
+                { label: 'RANGE',  val: 5,  color: '#00ffff' },
+                { label: 'TIMING', val: 4,  color: '#ff8800' }
+            ],
+            perks: ['Blocks all damage for 4 seconds', 'Rarest drop in the field', 'Blue aura while shield is active']
+        },
+        {
+            id: 'rapid', color: 0xff8800, hex: '#ff8800', modelShape: 'sphere', modelSize: 0.48,
+            name: 'RAPID+', tag: '6s FIRE RATE BOOST',
+            desc: 'Massively increases your fire rate for 6 seconds. Devastating when combined with the Phantom operative or during a high-density wave.',
+            stats: [
+                { label: 'POWER',  val: 9,  color: '#ff8800' },
+                { label: 'RARITY', val: 5,  color: '#ffff00' },
+                { label: 'RANGE',  val: 5,  color: '#00ffff' },
+                { label: 'TIMING', val: 6,  color: '#ff8800' }
+            ],
+            perks: ['Fire rate multiplied for 6 seconds', 'Stacks well with Phantom operative', 'Orange aura while active']
+        }
+    ],
     threats: [
         {
             id: 'runner', color: 0xff0040, hex: '#ff0040', modelSize: [1.0, 1.8, 1.0],
@@ -128,13 +190,17 @@ function initPreviewRenderer() {
     previewScene.add(grid);
 }
 
-function setPreviewMesh(color, w, h, d) {
+function clearPreviewMesh() {
     if (previewMesh) {
         previewScene.remove(previewMesh);
         previewMesh.geometry.dispose();
         previewMesh.material.dispose();
         previewMesh = null;
     }
+}
+
+function setPreviewMesh(color, w, h, d) {
+    clearPreviewMesh();
     const geo = new THREE.BoxGeometry(w, h, d);
     const mat = new THREE.MeshStandardMaterial({
         color, emissive: color, emissiveIntensity: 0.35,
@@ -142,6 +208,7 @@ function setPreviewMesh(color, w, h, d) {
     });
     previewMesh = new THREE.Mesh(geo, mat);
     previewMesh.position.y = h / 2;
+    previewMesh.userData.baseY = h / 2;
 
     const edges = new THREE.EdgesGeometry(geo);
     const line  = new THREE.LineSegments(edges,
@@ -157,11 +224,35 @@ function setPreviewMesh(color, w, h, d) {
     previewCamera.lookAt(0, h * 0.3, 0);
 }
 
+function setPreviewSphere(color, radius) {
+    clearPreviewMesh();
+    const geo = new THREE.OctahedronGeometry(radius);
+    const mat = new THREE.MeshStandardMaterial({
+        color, emissive: color, emissiveIntensity: 0.6,
+        roughness: 0.25, metalness: 0.7
+    });
+    previewMesh = new THREE.Mesh(geo, mat);
+    previewMesh.position.y = radius + 0.4;
+    previewMesh.userData.baseY = radius + 0.4;
+
+    const edges = new THREE.EdgesGeometry(geo);
+    const line  = new THREE.LineSegments(edges,
+        new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.12 })
+    );
+    previewMesh.add(line);
+    previewScene.add(previewMesh);
+
+    if (previewLight) previewLight.color.setHex(color);
+
+    previewCamera.position.set(0, radius * 2.5, radius * 6);
+    previewCamera.lookAt(0, radius + 0.4, 0);
+}
+
 function animatePreview() {
     previewAnimId = requestAnimationFrame(animatePreview);
     if (previewMesh) {
         previewMesh.rotation.y += 0.012;
-        previewMesh.position.y = (previewMesh.geometry.parameters.height / 2)
+        previewMesh.position.y = (previewMesh.userData.baseY || 0)
             + Math.sin(Date.now() * 0.0016) * 0.06;
     }
     if (previewRenderer && previewScene && previewCamera)
@@ -221,7 +312,11 @@ function showCodexEntry(tab, id) {
     const sideEl = document.getElementById('codex-item-' + id);
     if (sideEl) sideEl.classList.add('active');
 
-    setPreviewMesh(item.color, item.modelSize[0], item.modelSize[1], item.modelSize[2]);
+    if (item.modelShape === 'sphere') {
+        setPreviewSphere(item.color, item.modelSize);
+    } else {
+        setPreviewMesh(item.color, item.modelSize[0], item.modelSize[1], item.modelSize[2]);
+    }
     document.getElementById('preview-label').innerText = '// ' + item.name + ' //';
 
     const info = document.getElementById('codex-info');
