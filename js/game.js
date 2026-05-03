@@ -590,6 +590,7 @@ function shoot() {
     ammo--; lastShotTime = now; Sound.shoot(); shakeAmount = 0.12;
     muzzleFlashAmount = 1.0;
     shotsFired++;
+    if (ammo === 0 && !isReloading && reserve > 0) setTimeout(reload, 220);
 
     const activeDmg = (boosts.overclock && Date.now() < boosts.overclock) ? bulletDmg * 2 : bulletDmg;
     const spreads = burstCount === 3 ? [-0.22, 0, 0.22] : [0];
@@ -1095,8 +1096,8 @@ function animate() {
         let speed = b.isRocket ? 1.5 : 2.0;
         let nextPos = b.mesh.position.clone().add(b.dir.clone().multiplyScalar(speed));
 
-        // Rocket hits building
-        if (b.isRocket && (checkCollision(nextPos, 0.3) || b.dist > 60)) {
+        // Rocket hits building or ground
+        if (b.isRocket && (checkCollision(nextPos, 0.3) || nextPos.y <= 0.25 || b.dist > 60)) {
             rocketExplode(nextPos);
             scene.remove(b.mesh); bullets.splice(i, 1); continue;
         }
