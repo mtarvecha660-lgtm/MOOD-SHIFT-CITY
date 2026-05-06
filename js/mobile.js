@@ -89,7 +89,7 @@ function updateOrientationOverlay() {
         // Resume game when rotated back to landscape
         if (hp > 0 && scene && !gameRunning && document.getElementById('ui').style.display === 'block') {
             gameRunning = true;
-            animate();
+            if (typeof animate === 'function') animate();
         }
     }
 }
