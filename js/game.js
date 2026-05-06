@@ -786,7 +786,7 @@ function spawnEnemy(isBoss) {
             strafeDir: 1, nextStrafeChange: Date.now() + 2000,
             shootInterval: 1200, bulletSpeed: 0.8, bulletDamage: 20,
             bulletRange: 80, preferredDist: 25, lastEnemyShot: Date.now() + 2000,
-            hitFlash: 0
+            hitFlash: 0, lastMeleeHit: 0
         });
         return;
     }
@@ -845,7 +845,7 @@ function spawnEnemy(isBoss) {
         bulletRange:    type.bulletRange    || 0,
         preferredDist:  type.preferredDist  || 0,
         lastEnemyShot:  Date.now() + Math.random() * 2000,
-        hitFlash: 0
+        hitFlash: 0, lastMeleeHit: 0
     });
 }
 
@@ -1026,7 +1026,7 @@ function updateUI() {
             if (fill) fill.style.width = pct + '%';
             const phaseEl = document.getElementById('boss-phase-label');
             if (phaseEl) phaseEl.innerText = 'PHASE ' + (boss.bossPhase === 1 ? 'I' : boss.bossPhase === 2 ? 'II' : 'III');
-        } else if (!boss && !isBossWave) {
+        } else if (!isBossWave) {
             bossBarWrapper.style.display = 'none';
         }
     }
@@ -1037,14 +1037,19 @@ function updateUI() {
 
 // ── Game loop ──
 
+let _animating = false;
+
 function animate() {
-    if (!gameRunning) return;
-    if (gamePaused) return;
+    if (!gameRunning) { _animating = false; return; }
+    if (gamePaused) { _animating = false; return; }
     if (hp <= 0) {
+        _animating = false;
         triggerGameOver();
         return;
     }
-    requestAnimationFrame(animate);
+    if (_animating) return; // prevent double loop
+    _animating = true;
+    requestAnimationFrame(() => { _animating = false; animate(); });
 
     const shielded = boosts.shield && Date.now() < boosts.shield;
     const sp       = (boosts.speed  && Date.now() < boosts.speed)  ? playerSpeed * 1.8 : playerSpeed;
@@ -1283,15 +1288,15 @@ function animate() {
         // BOSS behavior
         if (e.behavior === 'boss') {
             const hpPct = e.hp / e.maxHp;
-            if (hpPct > 0.6)      e.bossPhase = 1;
-            else if (hpPct > 0.25) e.bossPhase = 2;
+            if      (hpPct > 0.65) e.bossPhase = 1;
+            else if (hpPct > 0.30) e.bossPhase = 2;
             else                   e.bossPhase = 3;
 
-            const bossSpeed = e.bossPhase === 3 ? 0.18 : (e.bossPhase === 2 ? 0.10 : 0.06);
-            const shootRate = e.bossPhase === 1 ? 1800 : (e.bossPhase === 2 ? 900 : 600);
+            const bossSpeed = e.bossPhase === 3 ? 0.22 : (e.bossPhase === 2 ? 0.12 : 0.06);
+            const shootRate = e.bossPhase === 1 ? 1800 : (e.bossPhase === 2 ? 800 : 500);
 
             let moveX = toP.x * bossSpeed, moveZ = toP.z * bossSpeed;
-            if (e.bossPhase < 3 && distToPlayer < 20) {
+            if (e.bossPhase < 3 && distToPlayer < 30) {
                 let sV = new THREE.Vector3(-toP.z, 0, toP.x);
                 moveX += sV.x * e.strafeDir * bossSpeed * 0.5;
                 moveZ += sV.z * e.strafeDir * bossSpeed * 0.5;
@@ -1304,24 +1309,28 @@ function animate() {
             e.mesh.position.z += moveZ; if (checkCollision(e.mesh.position, e.size/2)) e.mesh.position.z -= moveZ;
             e.mesh.lookAt(player.position.x, e.mesh.position.y, player.position.z);
 
-            // Melee
+            // Melee (500ms cooldown to avoid per-frame damage)
             if (distToPlayer < 3.0 && !shielded) {
-                if (difficultyMode === 'ghost') hp = 0;
-                else { hp -= 1.5; waveDamageTaken += 1.5; }
-                shakeAmount = 0.2; chromaAmount = 0.8; Sound.hit();
+                if (!e.lastMeleeHit || Date.now() - e.lastMeleeHit > 500) {
+                    e.lastMeleeHit = Date.now();
+                    const meleeDmg = 15;
+                    if (difficultyMode === 'ghost') hp = 0;
+                    else { hp -= meleeDmg; waveDamageTaken += meleeDmg; }
+                    shakeAmount = 0.2; chromaAmount = 0.8; Sound.hit();
+                }
             }
 
             // Ranged burst
             if (distToPlayer <= 60 && Date.now() - e.lastEnemyShot > shootRate) {
                 e.lastEnemyShot = Date.now();
-                const burstSpreads = e.bossPhase === 1 ? [0] : [-0.2, 0, 0.2];
+                const burstSpreads = e.bossPhase === 1 ? [0] : e.bossPhase === 2 ? [-0.2, 0, 0.2] : [-0.3, -0.15, 0, 0.15, 0.3];
                 for (let sp of burstSpreads) {
                     const eBullet = new THREE.Mesh(
                         new THREE.SphereGeometry(0.18, 6, 6),
                         new THREE.MeshBasicMaterial({ color: 0xff4400 })
                     );
                     eBullet.position.copy(e.mesh.position);
-                    eBullet.position.y = e.mesh.position.y + e.size * 0.4;
+                    eBullet.position.y = e.mesh.position.y + 1.5; // eye-level (boss center is at 3.6)
                     const eDir = player.position.clone().sub(eBullet.position).normalize();
                     const rotDir = new THREE.Vector3(
                         eDir.x * Math.cos(sp) - eDir.z * Math.sin(sp),
@@ -1391,13 +1400,17 @@ function animate() {
         }
         e.mesh.lookAt(player.position.x, e.mesh.position.y, player.position.z);
         if (distToPlayer < 1.8 && !shielded) {
-            if (difficultyMode === 'ghost') {
-                hp = 0;
-            } else {
-                hp -= 0.5;
-                waveDamageTaken += 0.5;
+            if (!e.lastMeleeHit || Date.now() - e.lastMeleeHit > 400) {
+                e.lastMeleeHit = Date.now();
+                const meleeDmg = 10;
+                if (difficultyMode === 'ghost') {
+                    hp = 0;
+                } else {
+                    hp -= meleeDmg;
+                    waveDamageTaken += meleeDmg;
+                }
+                shakeAmount = 0.08; createImpact(player.position, 0xffffff, 2);
             }
-            shakeAmount = 0.08; createImpact(player.position, 0xffffff, 2);
         }
     }
 
@@ -1412,7 +1425,7 @@ function animate() {
             Sound.pickup();
             const healAmt = selectedChar === 'medic' ? 50 : 25;
             if      (d.type === 'hp')        hp = Math.min(playerMaxHp, hp + healAmt);
-            else if (d.type === 'ammo')      reserve = Math.min(MAX_RESERVE, reserve + 24);
+            else if (d.type === 'ammo')      { const c = CHARS[selectedChar]; reserve = Math.min(MAX_RESERVE, c ? c.reserve : MAX_RESERVE); }
             else if (d.type === 'powerup')   applyPowerup(d.powerup);
             else if (d.type === 'secondary') { hasSecondaryWeapon = true; secondaryAmmo = 3; }
             createImpact(d.mesh.position, d.mesh.material.color.getHex(), 15);
@@ -1619,6 +1632,7 @@ function resumeGame() {
     gamePaused = false;
     document.getElementById('pause-menu').style.display = 'none';
     if (!isMobile) document.body.requestPointerLock();
+    // Only restart the loop if it was fully stopped (not just paused)
     animate();
 }
 
