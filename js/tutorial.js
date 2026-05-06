@@ -26,6 +26,7 @@ const TUT_SLIDES = [
                   <div class="tut-row"><span class="tut-badge" style="color:#00ffff;border-color:#00ffff">STRIKER</span><span class="tut-desc">Balanced speed, HP and damage. <strong style="color:rgba(0,255,255,0.7)">Best for new operatives.</strong></span></div>
                   <div class="tut-row"><span class="tut-badge" style="color:#aa00ff;border-color:#aa00ff">ENFORCER</span><span class="tut-desc">160 HP tank with a 3-round burst per trigger. Moves slowly.</span></div>
                   <div class="tut-row"><span class="tut-badge" style="color:#ffff00;border-color:#ffff00">PHANTOM</span><span class="tut-desc">Fastest movement and fire rate. Very low HP — never stop moving.</span></div>
+                  <div class="tut-row"><span class="tut-badge" style="color:#00ff88;border-color:#00ff88">MEDIC</span><span class="tut-desc">Passive HP regen and double healing from HP packs. Durable support.</span></div>
                 </div>`
     },
     {
@@ -33,8 +34,8 @@ const TUT_SLIDES = [
         title: 'KNOW YOUR ENEMIES',
         body:  `<div class="tut-table">
                   <div class="tut-row"><span class="tut-badge" style="color:#ff0040;border-color:#ff0040">RUNNER</span><span class="tut-desc">Charges straight at you. Fast but low HP. Easy target.</span></div>
-                  <div class="tut-row"><span class="tut-badge" style="color:#aa00ff;border-color:#aa00ff">BRUTE</span><span class="tut-desc">Slow, massive HP. Keep your distance and unload everything.</span></div>
-                  <div class="tut-row"><span class="tut-badge" style="color:#ffff00;border-color:#ffff00">DASHER</span><span class="tut-desc">Extremely fast, very fragile. Fire immediately on sight.</span></div>
+                  <div class="tut-row"><span class="tut-badge" style="color:#aa00ff;border-color:#aa00ff">TANK</span><span class="tut-desc">Slow, massive HP. Keep your distance and unload everything.</span></div>
+                  <div class="tut-row"><span class="tut-badge" style="color:#ffff00;border-color:#ffff00">SCOUT</span><span class="tut-desc">Extremely fast, very fragile. Fire immediately on sight.</span></div>
                   <div class="tut-row"><span class="tut-badge" style="color:#00ff66;border-color:#00ff66">SNIPER</span><span class="tut-desc">Stays at range and fires accurate shots. Keep moving to dodge.</span></div>
                 </div>`
     },
