@@ -66,6 +66,10 @@ const NEXUS = (() => {
         if (hpF < 0.35) s *= 1.5;
         s += (mem.threatDeaths[name] || 0) * 18;
         s += Math.max(0, 80 - e.hp) * 0.4;
+
+        // Heavily penalize enemies we can't see — prefer visible targets
+        if (!hasLineOfSight(player.position, e.mesh.position)) s -= 800;
+
         return s;
     }
 
@@ -231,12 +235,67 @@ const NEXUS = (() => {
     }
 
     // ─────────────────────────────────────────────────────────────
+    //  LINE-OF-SIGHT — ray vs AABB slab test (XZ plane)
+    //  Returns true if the path from 'from' to 'to' is clear of
+    //  all buildings. Uses the slab method on each building AABB.
+    // ─────────────────────────────────────────────────────────────
+    function hasLineOfSight(from, to) {
+        if (!buildings || !buildings.length) return true;
+
+        const dx = to.x - from.x;
+        const dz = to.z - from.z;
+
+        for (const b of buildings) {
+            // Tiny margin so the ray catches near-grazes
+            const margin = 0.4;
+            const minX = b.minX - margin, maxX = b.maxX + margin;
+            const minZ = b.minZ - margin, maxZ = b.maxZ + margin;
+
+            // Skip if either endpoint is already inside this building
+            const fromIn = from.x > minX && from.x < maxX && from.z > minZ && from.z < maxZ;
+            const toIn   =   to.x > minX &&   to.x < maxX &&   to.z > minZ &&   to.z < maxZ;
+            if (fromIn || toIn) continue;
+
+            // X-axis slab
+            let tMinX = -Infinity, tMaxX = Infinity;
+            if (Math.abs(dx) > 1e-9) {
+                const t1 = (minX - from.x) / dx;
+                const t2 = (maxX - from.x) / dx;
+                tMinX = Math.min(t1, t2);
+                tMaxX = Math.max(t1, t2);
+            } else {
+                if (from.x < minX || from.x > maxX) continue; // parallel and outside
+            }
+
+            // Z-axis slab
+            let tMinZ = -Infinity, tMaxZ = Infinity;
+            if (Math.abs(dz) > 1e-9) {
+                const t1 = (minZ - from.z) / dz;
+                const t2 = (maxZ - from.z) / dz;
+                tMinZ = Math.min(t1, t2);
+                tMaxZ = Math.max(t1, t2);
+            } else {
+                if (from.z < minZ || from.z > maxZ) continue;
+            }
+
+            // Slab overlap within segment [0, 1]
+            const tEnter = Math.max(tMinX, tMinZ);
+            const tExit  = Math.min(tMaxX, tMaxZ);
+            if (tEnter < tExit && tEnter < 1.0 && tExit > 0.0) {
+                return false; // blocked
+            }
+        }
+        return true;
+    }
+
+    // ─────────────────────────────────────────────────────────────
     //  ROCKET LOGIC
     // ─────────────────────────────────────────────────────────────
     function considerRocket(tgt) {
         if (!hasSecondaryWeapon || secondaryAmmo <= 0 || !tgt) return;
         const d = player.position.distanceTo(tgt.mesh.position);
         if (d < 5 || d > 55) return;
+        if (!hasLineOfSight(player.position, tgt.mesh.position)) return;
 
         const cluster = enemies.filter(e =>
             e.mesh.position.distanceTo(tgt.mesh.position) < 8
@@ -303,6 +362,8 @@ const NEXUS = (() => {
     function doHunt(tgt) {
         if (!tgt) { doIdle(null); return; }
 
+        const los = hasLineOfSight(player.position, tgt.mesh.position);
+
         aimAt(tgt.mesh.position);
 
         const d    = player.position.distanceTo(tgt.mesh.position);
@@ -316,7 +377,12 @@ const NEXUS = (() => {
         const sv = strafeVec(ux, uz);
 
         let wx, wz;
-        if (d > pref + 2) {
+        if (!los) {
+            // No line of sight — move toward enemy while strafing hard to one side
+            // to flank around the building. Pure strafe lets us slide along the wall.
+            wx = ux * 0.5 + sv.x * 1.2;
+            wz = uz * 0.5 + sv.z * 1.2;
+        } else if (d > pref + 2) {
             wx = ux * 0.85 + sv.x * 0.55;
             wz = uz * 0.85 + sv.z * 0.55;
         } else if (d < pref - 2) {
@@ -333,7 +399,8 @@ const NEXUS = (() => {
 
         moveWorld(wx, wz);
 
-        if (ammo > 0 && !isReloading) shoot();
+        // Only shoot when we actually have line of sight
+        if (los && ammo > 0 && !isReloading) shoot();
         else if (ammo === 0 && reserve === 0) {
             // Completely out of ammo and no drop yet — kite away from enemies
             const dx = player.position.x - tgt.mesh.position.x;
@@ -357,7 +424,7 @@ const NEXUS = (() => {
 
         moveWorld(-ux * 0.6 + sv.x * 0.8, -uz * 0.6 + sv.z * 0.8);
 
-        if (ammo > 0 && !isReloading) shoot();
+        if (hasLineOfSight(player.position, tgt.mesh.position) && ammo > 0 && !isReloading) shoot();
     }
 
     function doSeekDrop(dp, tgt) {
@@ -365,7 +432,8 @@ const NEXUS = (() => {
 
         if (tgt) {
             aimAt(tgt.mesh.position);
-            if (player.position.distanceTo(tgt.mesh.position) < 35 && ammo > 0 && !isReloading) shoot();
+            const los = hasLineOfSight(player.position, tgt.mesh.position);
+            if (los && player.position.distanceTo(tgt.mesh.position) < 35 && ammo > 0 && !isReloading) shoot();
         } else {
             aimAt(dp.mesh.position);
         }
@@ -387,7 +455,7 @@ const NEXUS = (() => {
         if (!bomber || !bomber.mesh) { ai.phase = 'HUNT'; return; }
 
         aimAt(bomber.mesh.position);
-        if (ammo > 0 && !isReloading) shoot();
+        if (hasLineOfSight(player.position, bomber.mesh.position) && ammo > 0 && !isReloading) shoot();
 
         const dx  = player.position.x - bomber.mesh.position.x;
         const dz  = player.position.z - bomber.mesh.position.z;
@@ -515,7 +583,7 @@ const NEXUS = (() => {
         const hC = hF < 0.3 ? '#ff3040' : hF < 0.55 ? '#ff8800' : '#00ff88';
         const aF = maxClip > 0 ? ammo / maxClip : 0;
         const phaseColors = {
-            HUNT:'#0ff', KITE:'#ff0', SEEK_DROP:'#f46', EVADE_BOMBER:'#f80', IDLE:'#556'
+            HUNT:'#0ff', KITE:'#ff0', SEEK_DROP:'#f46', EVADE_BOMBER:'#f80', IDLE:'#556', FLANK:'#a0f'
         };
         const pC = phaseColors[ai.phase] || '#0fc';
         el.innerHTML = `
