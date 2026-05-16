@@ -544,10 +544,247 @@ const NEXUS = (() => {
     }
 
     // ─────────────────────────────────────────────────────────────
-    //  ENABLE / DISABLE
+    //  AUTONOMOUS TRAINING STATE
+    // ─────────────────────────────────────────────────────────────
+    let training      = false;   // true = full auto-train loop running
+    let trainRunCount = 0;       // runs completed this training session
+    let trainHistory  = [];      // [{wave, score, kills, acc, time}] per run
+    let trainStartTime = 0;
+    let trainRestartTimer = null;
+    let trainGameOverPatched = false;
+
+    // ─────────────────────────────────────────────────────────────
+    //  HEADLESS GAME RESET — restarts a full run without any UI
+    //  interaction, pointer lock, menus, or game-over screen.
+    // ─────────────────────────────────────────────────────────────
+    function headlessReset() {
+        // Kill any lingering Three.js renderer from the last run
+        if (typeof renderer !== 'undefined' && renderer) {
+            const old = renderer.domElement;
+            if (old && old.parentNode) old.parentNode.removeChild(old);
+        }
+
+        // Clear all entity arrays the game uses
+        if (typeof enemies      !== 'undefined') enemies.length      = 0;
+        if (typeof bullets      !== 'undefined') bullets.length      = 0;
+        if (typeof enemyBullets !== 'undefined') enemyBullets.length = 0;
+        if (typeof buildings    !== 'undefined') buildings.length    = 0;
+        if (typeof drops        !== 'undefined') drops.length        = 0;
+        if (typeof particles    !== 'undefined') particles.length    = 0;
+        if (typeof killFeedEntries !== 'undefined') killFeedEntries.length = 0;
+
+        // Reset all game-state globals to their startGame values
+        const c = CHARS[selectedChar] || CHARS['striker'];
+        playerSpeed   = c.speed;
+        playerMaxHp   = c.maxHp;
+        shootCooldown = c.cooldown;
+        bulletDmg     = c.dmg;
+        maxClip       = c.clip;
+        ammo          = c.clip;
+        burstCount    = c.burst;
+        hp            = c.maxHp;
+        reserve       = c.reserve;
+        boosts        = {};
+
+        killCount    = 0; shotsFired  = 0; shotsHit      = 0;
+        runSpeedPickups = 0; waveDamageTaken = 0; waveStartHp = c.maxHp;
+        comboCount   = 0; comboMultiplier = 1;
+        hasSecondaryWeapon = false; secondaryAmmo = 0;
+        score        = 0;
+        wave         = 0;
+        enemiesToSpawn = 0;
+        isWaveTransition = false;
+        gamePaused   = false;
+        isBossWave   = false;
+        currentWaveModifier = null;
+        isReloading  = false;
+        lastShotTime = 0;
+        shakeAmount  = 0;
+        damageFlashAmount = 0;
+        muzzleFlashAmount = 0;
+        chromaAmount = 0;
+        bobTime      = 0;
+        runStartTime = Date.now();
+        if (comboDecayTimer) { clearTimeout(comboDecayTimer); comboDecayTimer = null; }
+
+        // Hide any leftover overlays
+        ['gameover','pause-menu'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.style.display = 'none';
+        });
+        const bossBar = document.getElementById('boss-bar-wrapper');
+        if (bossBar) bossBar.style.display = 'none';
+
+        // Re-show game UI
+        ['ui','crosshair','minimap'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.style.display = 'block';
+        });
+        const boostsEl = document.getElementById('boosts-hud');
+        if (boostsEl) boostsEl.style.display = 'flex';
+
+        // Re-init scene and start the wave loop
+        init();
+        gameRunning = true;
+        tutorialMode = false;
+        startWave(1);
+        animate();
+
+        // Reset AI state for fresh run
+        ai.lastHp    = hp;
+        ai.phase     = 'IDLE';
+        ai.lastPos   = null;
+        ai.stuckTicks = 0;
+        ai.log       = [];
+
+        log(`RUN ${trainRunCount} START — streak: ${mem.bestWave} best`);
+        updateTrainHUD();
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    //  PATCH triggerGameOver so training mode intercepts it
+    // ─────────────────────────────────────────────────────────────
+    function patchGameOver() {
+        if (trainGameOverPatched) return;
+        trainGameOverPatched = true;
+
+        const _orig = window.triggerGameOver;
+        window.triggerGameOver = function() {
+            if (!training) {
+                // Normal mode — run original
+                _orig.apply(this, arguments);
+                return;
+            }
+
+            // ── Training mode: record run, then restart ──
+            gameRunning = false;
+
+            const w       = typeof wave !== 'undefined' ? wave : 0;
+            const s       = typeof score !== 'undefined' ? score : 0;
+            const k       = typeof killCount !== 'undefined' ? killCount : 0;
+            const acc     = shotsFired > 0 ? Math.round(shotsHit / shotsFired * 100) : 0;
+            const elapsed = Math.round((Date.now() - runStartTime) / 1000);
+
+            // Update persistent memory
+            if (s > highScore) { highScore = s; localStorage.setItem('msc_highscore', highScore); }
+            const xpEarned = Math.floor(s / 8) + k * 2 + (w - 1) * 40;
+            playerXP += Math.max(0, xpEarned);
+            localStorage.setItem('msc_xp', playerXP);
+
+            mem.totalRuns++;
+            trainRunCount++;
+            if (w > mem.bestWave) mem.bestWave = w;
+            saveMem();
+
+            // Push to training history (keep last 50 runs for the graph)
+            trainHistory.push({ wave: w, score: s, kills: k, acc, time: elapsed });
+            if (trainHistory.length > 50) trainHistory.shift();
+
+            log(`RUN ${trainRunCount} DONE — wave:${w} score:${s} kills:${k} acc:${acc}%`);
+            updateTrainHUD();
+
+            // Auto-restart after a brief pause so the screen isn't a flicker
+            trainRestartTimer = setTimeout(() => {
+                if (training) headlessReset();
+            }, 1200);
+        };
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    //  START / STOP TRAINING
+    // ─────────────────────────────────────────────────────────────
+    function startTraining() {
+        if (training) return;
+        training      = true;
+        trainRunCount = 0;
+        trainHistory  = [];
+        trainStartTime = Date.now();
+
+        patchGameOver();
+        patchPointerLock();
+
+        // Show training HUD, hide normal nexus HUD
+        const hud = document.getElementById('nexus-hud');
+        if (hud) hud.style.display = 'none';
+        const thud = document.getElementById('nexus-train-hud');
+        if (thud) thud.style.display = 'block';
+
+        // Update button
+        const btn = document.getElementById('nexus-train-btn');
+        if (btn) { btn.textContent = '■ STOP TRAINING'; btn.classList.add('on'); }
+
+        // Activate AI frame loop
+        if (!active) {
+            active = true;
+            ai.lastHp = hp || 100;
+            ai.phase  = 'IDLE';
+            ai.lastPos = null;
+            ai.stuckTicks = 0;
+            rafId = requestAnimationFrame(frame);
+        }
+
+        // If a game is already running, let the AI take over immediately.
+        // If not (we're on menu), do a headless start.
+        if (!gameRunning) {
+            // Minimal startGame equivalent — no pointer lock, no mobile check
+            const c = CHARS[selectedChar] || CHARS['striker'];
+            playerSpeed = c.speed; playerMaxHp = c.maxHp; shootCooldown = c.cooldown;
+            bulletDmg = c.dmg; maxClip = c.clip; ammo = c.clip; burstCount = c.burst;
+            hp = c.maxHp; reserve = c.reserve; boosts = {};
+            killCount = 0; shotsFired = 0; shotsHit = 0;
+            runSpeedPickups = 0; waveDamageTaken = 0;
+            comboCount = 0; comboMultiplier = 1;
+            hasSecondaryWeapon = false; secondaryAmmo = 0;
+            killFeedEntries = [];
+            runStartTime = Date.now();
+            score = 0;
+
+            document.getElementById('menu').style.display = 'none';
+
+            ['ui','crosshair','minimap'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.style.display = 'block';
+            });
+            const boostsEl = document.getElementById('boosts-hud');
+            if (boostsEl) boostsEl.style.display = 'flex';
+
+            init();
+            gameRunning = true;
+            tutorialMode = false;
+            startWave(1);
+            animate();
+        }
+
+        log('AUTO-TRAIN STARTED');
+        updateTrainHUD();
+        console.log('%c[NEXUS AI] Autonomous training started — runs indefinitely until stopped.', 'color:#00ffcc;font-weight:bold');
+    }
+
+    function stopTraining() {
+        if (!training) return;
+        training = false;
+        if (trainRestartTimer) { clearTimeout(trainRestartTimer); trainRestartTimer = null; }
+
+        // Stop AI
+        active = false;
+        if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+
+        const btn = document.getElementById('nexus-train-btn');
+        if (btn) { btn.textContent = '▶ AUTO TRAIN'; btn.classList.remove('on'); }
+
+        const thud = document.getElementById('nexus-train-hud');
+        if (thud) thud.style.display = 'block'; // keep showing final stats
+
+        log('AUTO-TRAIN STOPPED');
+        updateTrainHUD();
+        console.log('%c[NEXUS AI] Training stopped.', 'color:#ff8800;font-weight:bold');
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    //  ENABLE / DISABLE (manual co-pilot mode, unchanged)
     // ─────────────────────────────────────────────────────────────
     function enable() {
-        if (active) return;
+        if (active || training) return;
         active = true;
         ai.lastHp    = hp || 100;
         ai.phase     = 'IDLE';
@@ -564,7 +801,7 @@ const NEXUS = (() => {
     }
 
     function disable() {
-        if (!active) return;
+        if (!active || training) return;
         active = false;
         if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
         const btn = document.getElementById('nexus-btn');
@@ -574,11 +811,11 @@ const NEXUS = (() => {
     }
 
     // ─────────────────────────────────────────────────────────────
-    //  HUD
+    //  COMBAT HUD (shown during manual co-pilot mode)
     // ─────────────────────────────────────────────────────────────
     function updateHUD() {
         const el = document.getElementById('nexus-hud');
-        if (!el) return;
+        if (!el || training) return;
         const hF = player ? hp / playerMaxHp : 0;
         const hC = hF < 0.3 ? '#ff3040' : hF < 0.55 ? '#ff8800' : '#00ff88';
         const aF = maxClip > 0 ? ammo / maxClip : 0;
@@ -619,13 +856,121 @@ ${ai.log.slice(0,6).map(l=>`<div style="color:#344;font-size:9px;line-height:1.5
     }
 
     // ─────────────────────────────────────────────────────────────
-    //  INIT
+    //  TRAINING HUD — live stats + sparkline graph
+    // ─────────────────────────────────────────────────────────────
+    function updateTrainHUD() {
+        const el = document.getElementById('nexus-train-hud');
+        if (!el) return;
+
+        const totalSecs  = Math.floor((Date.now() - trainStartTime) / 1000);
+        const mm = String(Math.floor(totalSecs / 60)).padStart(2,'0');
+        const ss = String(totalSecs % 60).padStart(2,'0');
+        const elapsed    = `${mm}:${ss}`;
+
+        const avgWave    = trainHistory.length
+            ? (trainHistory.reduce((s,r) => s + r.wave, 0) / trainHistory.length).toFixed(1) : '–';
+        const avgAcc     = trainHistory.length
+            ? Math.round(trainHistory.reduce((s,r) => s + r.acc, 0)  / trainHistory.length) + '%' : '–';
+        const totalKills = trainHistory.reduce((s,r) => s + r.kills, 0);
+        const bestWaveH  = trainHistory.length ? Math.max(...trainHistory.map(r => r.wave)) : 0;
+
+        // Trend: is performance improving?
+        let trend = '';
+        if (trainHistory.length >= 6) {
+            const half = Math.floor(trainHistory.length / 2);
+            const early = trainHistory.slice(0, half).reduce((s,r) => s + r.wave, 0) / half;
+            const late  = trainHistory.slice(-half).reduce((s,r) => s + r.wave, 0) / half;
+            const delta = late - early;
+            if      (delta >  1.5) trend = '<span style="color:#00ff88">▲ IMPROVING</span>';
+            else if (delta < -1.5) trend = '<span style="color:#ff3040">▼ DECLINING</span>';
+            else                   trend = '<span style="color:#ff8800">◆ STABLE</span>';
+        }
+
+        // Sparkline: mini SVG bar chart of wave reached per run
+        let sparkline = '';
+        if (trainHistory.length > 1) {
+            const maxW  = Math.max(...trainHistory.map(r => r.wave), 1);
+            const bars  = trainHistory.slice(-20); // last 20 runs
+            const bw    = 204 / bars.length;
+            const rects = bars.map((r, i) => {
+                const h   = Math.max(2, Math.round((r.wave / maxW) * 36));
+                const x   = i * bw;
+                const y   = 38 - h;
+                const col = r.wave >= mem.bestWave ? '#00ffcc' : r.wave >= avgWave ? '#0088ff' : '#334455';
+                return `<rect x="${x.toFixed(1)}" y="${y}" width="${(bw - 1).toFixed(1)}" height="${h}" fill="${col}" rx="1"/>`;
+            }).join('');
+            sparkline = `
+<div style="border-top:1px solid rgba(0,255,204,0.1);padding-top:6px;margin-top:4px">
+  <div style="color:#334;font-size:9px;letter-spacing:1px;margin-bottom:3px">WAVE HISTORY (last ${bars.length} runs)</div>
+  <svg width="204" height="40" style="display:block">
+    <rect width="204" height="40" fill="#010810" rx="2"/>
+    ${rects}
+    <line x1="0" y1="39" x2="204" y2="39" stroke="#0a1a2a" stroke-width="1"/>
+  </svg>
+  <div style="display:flex;justify-content:space-between;font-size:8px;color:#223;margin-top:2px">
+    <span>run ${Math.max(1, mem.totalRuns - bars.length + 1)}</span>
+    <span>run ${mem.totalRuns}</span>
+  </div>
+</div>`;
+        }
+
+        // Threat learning table
+        const threats = mem.threatDeaths;
+        const topThreat = Object.entries(threats).sort((a,b) => b[1]-a[1])[0];
+        const threatStr = topThreat && topThreat[1] > 0
+            ? `<span style="color:#f46">${topThreat[0].toUpperCase()}</span> <span style="color:#334">(${topThreat[1].toFixed(1)} deaths)</span>`
+            : '<span style="color:#334">–</span>';
+
+        const phaseColors = {
+            HUNT:'#0ff', KITE:'#ff0', SEEK_DROP:'#f46', EVADE_BOMBER:'#f80', IDLE:'#556', FLANK:'#a0f'
+        };
+        const pC = phaseColors[ai.phase] || '#0fc';
+
+        el.innerHTML = `
+<div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid rgba(0,255,204,0.2);padding-bottom:5px;margin-bottom:8px">
+  <span style="color:#0fc;font-size:11px;letter-spacing:2px;font-weight:bold">◈ AUTO-TRAIN</span>
+  <span style="font-size:9px;padding:2px 7px;border-radius:3px;background:${training?'rgba(0,255,204,0.12)':'rgba(255,136,0,0.12)'};color:${training?'#0fc':'#f80'};letter-spacing:1px;border:1px solid ${training?'#0fc44':'#f8044'}">${training?'RUNNING':'STOPPED'}</span>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:5px 10px;margin-bottom:8px;font-size:9px">
+  <div><span style="color:#334;letter-spacing:1px">SESSION</span><br><span style="color:#aee">${elapsed}</span></div>
+  <div><span style="color:#334;letter-spacing:1px">RUNS</span><br><span style="color:#aee">${trainRunCount}</span></div>
+  <div><span style="color:#334;letter-spacing:1px">BEST WAVE</span><br><span style="color:#0fc">${mem.bestWave}</span></div>
+  <div><span style="color:#334;letter-spacing:1px">AVG WAVE</span><br><span style="color:#0ff">${avgWave}</span></div>
+  <div><span style="color:#334;letter-spacing:1px">AVG ACC</span><br><span style="color:#f80">${avgAcc}</span></div>
+  <div><span style="color:#334;letter-spacing:1px">KILLS</span><br><span style="color:#f46">${totalKills}</span></div>
+</div>
+
+<div style="font-size:9px;margin-bottom:6px">
+  <span style="color:#334;letter-spacing:1px">TOP THREAT </span>${threatStr}
+</div>
+
+<div style="font-size:9px;margin-bottom:6px">
+  <span style="color:#334;letter-spacing:1px">TREND </span>${trend || '<span style="color:#334">– need 6+ runs</span>'}
+</div>
+
+<div style="font-size:9px;margin-bottom:4px">
+  <span style="color:#334;letter-spacing:1px">PHASE </span>
+  <span style="color:${pC}">${ai.phase}</span>
+  <span style="color:#223;margin-left:8px">W${typeof wave!=='undefined'?wave:'–'} HP:${Math.ceil(hp||0)}</span>
+</div>
+
+${sparkline}
+
+<div style="border-top:1px solid rgba(0,255,204,0.08);padding-top:5px;margin-top:6px">
+${ai.log.slice(0,4).map(l=>`<div style="color:#223;font-size:8px;line-height:1.5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${l}</div>`).join('')}
+</div>`;
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    //  INIT UI
     // ─────────────────────────────────────────────────────────────
     function injectUI() {
-        if (document.getElementById('nexus-btn')) return;
+        if (document.getElementById('nexus-train-btn')) return;
 
         const s = document.createElement('style');
         s.textContent = `
+        /* ── Combat co-pilot HUD (manual mode) ── */
         #nexus-hud {
             position:fixed;top:14px;right:170px;width:232px;
             background:rgba(0,2,10,0.88);
@@ -636,8 +981,20 @@ ${ai.log.slice(0,6).map(l=>`<div style="color:#344;font-size:9px;line-height:1.5
             box-shadow:0 0 24px rgba(0,255,204,0.08),inset 0 0 30px rgba(0,255,204,0.03);
             display:none;
         }
+        /* ── Training stats HUD ── */
+        #nexus-train-hud {
+            position:fixed;top:14px;right:14px;width:228px;
+            background:rgba(0,2,10,0.92);
+            border:1px solid rgba(0,255,204,0.28);border-radius:6px;
+            padding:10px 12px;font-family:'Courier New',monospace;
+            color:#aee;z-index:9999;pointer-events:none;
+            backdrop-filter:blur(8px);
+            box-shadow:0 0 28px rgba(0,255,204,0.10),inset 0 0 30px rgba(0,255,204,0.04);
+            display:none;
+        }
+        /* ── Manual AI button (bottom-right, shown when NOT training) ── */
         #nexus-btn {
-            position:fixed;bottom:55px;right:14px;
+            position:fixed;bottom:90px;right:14px;
             background:rgba(0,255,204,0.06);
             border:1px solid rgba(0,255,204,0.35);
             color:#0fc;font-family:'Courier New',monospace;
@@ -647,39 +1004,111 @@ ${ai.log.slice(0,6).map(l=>`<div style="color:#344;font-size:9px;line-height:1.5
         }
         #nexus-btn:hover { background:rgba(0,255,204,0.15);box-shadow:0 0 10px rgba(0,255,204,0.2); }
         #nexus-btn.on    { background:rgba(0,255,204,0.18);border-color:#0fc;box-shadow:0 0 14px rgba(0,255,204,0.25); }
+        /* ── AUTO TRAIN button (bottom-right, always visible) ── */
+        #nexus-train-btn {
+            position:fixed;bottom:50px;right:14px;
+            background:rgba(0,255,204,0.08);
+            border:1px solid rgba(0,255,204,0.45);
+            color:#0fc;font-family:'Courier New',monospace;
+            font-size:10px;letter-spacing:2px;padding:7px 14px;
+            cursor:pointer;border-radius:4px;z-index:9999;
+            transition:background 0.2s,box-shadow 0.2s;
+        }
+        #nexus-train-btn:hover { background:rgba(0,255,204,0.18);box-shadow:0 0 12px rgba(0,255,204,0.25); }
+        #nexus-train-btn.on    {
+            background:rgba(0,255,204,0.22);border-color:#0fc;
+            box-shadow:0 0 18px rgba(0,255,204,0.35);
+            animation: nexusPulse 1.8s ease-in-out infinite;
+        }
+        @keyframes nexusPulse {
+            0%,100% { box-shadow:0 0 18px rgba(0,255,204,0.35); }
+            50%      { box-shadow:0 0 28px rgba(0,255,204,0.65); }
+        }
+        /* ── Reset memory button inside training HUD ── */
+        #nexus-reset-btn {
+            display:block;width:100%;margin-top:8px;
+            background:rgba(255,48,64,0.08);
+            border:1px solid rgba(255,48,64,0.3);
+            color:#f46;font-family:'Courier New',monospace;
+            font-size:9px;letter-spacing:1px;padding:4px 0;
+            cursor:pointer;border-radius:3px;pointer-events:all;
+        }
+        #nexus-reset-btn:hover { background:rgba(255,48,64,0.18); }
         `;
         document.head.appendChild(s);
 
+        // Combat co-pilot HUD (manual mode only)
         const hud = document.createElement('div');
         hud.id = 'nexus-hud';
         document.body.appendChild(hud);
 
+        // Training stats HUD
+        const thud = document.createElement('div');
+        thud.id = 'nexus-train-hud';
+        document.body.appendChild(thud);
+
+        // Manual AI toggle button
         const btn = document.createElement('button');
         btn.id = 'nexus-btn';
         btn.textContent = '▶ NEXUS AI';
-        btn.addEventListener('click', () => active ? disable() : enable());
+        btn.addEventListener('click', () => {
+            if (training) return; // ignore if training
+            active ? disable() : enable();
+        });
         document.body.appendChild(btn);
+
+        // AUTO TRAIN button — always visible on menu + in-game
+        const trainBtn = document.createElement('button');
+        trainBtn.id = 'nexus-train-btn';
+        trainBtn.textContent = '▶ AUTO TRAIN';
+        trainBtn.addEventListener('click', () => {
+            training ? stopTraining() : startTraining();
+        });
+        document.body.appendChild(trainBtn);
     }
 
-    // Watch for game-over to save run stats
+    // ─────────────────────────────────────────────────────────────
+    //  TRAINING HUD CLOCK — keep updating elapsed time & live stats
+    // ─────────────────────────────────────────────────────────────
     setInterval(() => {
-        if (active && typeof hp !== 'undefined' && hp <= 0) {
-            mem.totalRuns++;
-            const w = typeof wave !== 'undefined' ? wave : 0;
-            if (w > mem.bestWave) mem.bestWave = w;
-            saveMem();
-            log(`RUN OVER wave:${w} | best:${mem.bestWave}`);
-        }
-    }, 600);
+        if (training) updateTrainHUD();
+        else if (active && ++ai.hudTick % 4 === 0) updateHUD();
+    }, 500);
+
+    // ─────────────────────────────────────────────────────────────
+    //  POINTER-LOCK PATCH
+    // ─────────────────────────────────────────────────────────────
+    let plPatched = false;
+    function patchPointerLock() {
+        if (plPatched) return;
+        plPatched = true;
+        document.addEventListener('pointerlockchange', () => {
+            // In training mode: always dismiss pause caused by pointer-lock loss
+            if ((active || training) && gameRunning && !document.pointerLockElement) {
+                setTimeout(() => {
+                    if (gamePaused) {
+                        gamePaused = false;
+                        const pm = document.getElementById('pause-menu');
+                        if (pm) pm.style.display = 'none';
+                    }
+                }, 8);
+            }
+        }, true);
+    }
 
     const ready = () => {
         injectUI();
         document.addEventListener('keydown', e => {
+            // Alt+A  → toggle manual AI
             if (e.altKey && e.key.toLowerCase() === 'a') {
-                active ? disable() : enable();
+                if (!training) active ? disable() : enable();
+            }
+            // Alt+T  → toggle auto-train
+            if (e.altKey && e.key.toLowerCase() === 't') {
+                training ? stopTraining() : startTraining();
             }
         });
-        console.log('%c[NEXUS AI v2] Ready — Alt+A or click ▶ NEXUS AI to activate', 'color:#00ffcc;font-weight:bold');
+        console.log('%c[NEXUS AI v3] Ready — click ▶ AUTO TRAIN or press Alt+T to begin autonomous training', 'color:#00ffcc;font-weight:bold');
     };
 
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', ready);
@@ -687,22 +1116,28 @@ ${ai.log.slice(0,6).map(l=>`<div style="color:#344;font-size:9px;line-height:1.5
 
     return {
         enable, disable,
-        get on()  { return active; },
-        get mem() { return mem; },
+        startTraining, stopTraining,
+        get on()       { return active; },
+        get isTraining(){ return training; },
+        get mem()      { return mem; },
+        get history()  { return trainHistory; },
         resetMemory() {
             mem = {
                 threatDeaths:{scout:0,sniper:0,bomber:0,tank:0,boss:0,runner:0},
                 totalRuns:0, bestWave:0, dangerZones:[]
             };
             saveMem();
+            trainHistory = [];
+            updateTrainHUD();
         }
     };
 })();
 
 // ─────────────────────────────────────────────────────────────────
-// INSTALL:
-//   1. Save as  js/ai_player.js
-//   2. In index.html, LAST line inside <body> before </body>:
-//        <script src="js/ai_player.js"></script>
-//   3. Open game → start a run → click ▶ NEXUS AI  or  Alt+A
+// NEXUS AI v3 — Autonomous Training System
+// Controls:
+//   ▶ AUTO TRAIN button (bottom-right)  → start / stop endless training
+//   Alt+T                               → same keyboard shortcut
+//   ▶ NEXUS AI button                   → manual co-pilot (single run)
+//   Alt+A                               → same keyboard shortcut
 // ─────────────────────────────────────────────────────────────────
