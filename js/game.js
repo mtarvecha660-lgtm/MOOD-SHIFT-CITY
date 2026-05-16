@@ -501,6 +501,20 @@ function checkCollision(pos, radius) {
     return false;
 }
 
+// Memory-safe mesh disposal
+function disposeMesh(mesh) {
+    if (!mesh) return;
+    if (mesh.geometry) mesh.geometry.dispose();
+    if (mesh.material) {
+        if (Array.isArray(mesh.material)) {
+            mesh.material.forEach(m => m.dispose());
+        } else {
+            mesh.material.dispose();
+        }
+    }
+    if (scene) scene.remove(mesh);
+}
+
 function createImpact(pos, color, count = 8) {
     for (let i = 0; i < count; i++) {
         let p = particles.find(p => !p.active);
@@ -524,9 +538,13 @@ function init() {
     scene.fog = new THREE.FogExp2(0x000011, 0.04);
 
     camera   = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-    renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    document.body.appendChild(renderer.domElement);
+    
+    // WebGL Context Fix: Only initialize renderer if it does not exist
+    if (!renderer) {
+        renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+    }
 
     scene.add(new THREE.AmbientLight(0xffffff, 0.2));
     let sun = new THREE.DirectionalLight(0x00ffff, 0.5);
@@ -1104,12 +1122,12 @@ function animate() {
         // Rocket hits building or ground
         if (b.isRocket && (checkCollision(nextPos, 0.3) || nextPos.y <= 0.25 || b.dist > 60)) {
             rocketExplode(nextPos);
-            scene.remove(b.mesh); bullets.splice(i, 1); continue;
+            disposeMesh(b.mesh); bullets.splice(i, 1); continue;
         }
 
         if (!b.isRocket && (checkCollision(nextPos, 0.2) || b.dist > 150)) {
             if (b.dist <= 150) createImpact(nextPos, 0x00ffff, 6);
-            scene.remove(b.mesh); bullets.splice(i, 1); continue;
+            disposeMesh(b.mesh); bullets.splice(i, 1); continue;
         }
 
         let hitEnemy = false;
@@ -1125,8 +1143,8 @@ function animate() {
                 break;
             }
         }
-        if (hitEnemy && !b.isRocket) { scene.remove(b.mesh); bullets.splice(i, 1); continue; }
-        if (hitEnemy && b.isRocket)  { rocketExplode(nextPos); scene.remove(b.mesh); bullets.splice(i, 1); continue; }
+        if (hitEnemy && !b.isRocket) { disposeMesh(b.mesh); bullets.splice(i, 1); continue; }
+        if (hitEnemy && b.isRocket)  { rocketExplode(nextPos); disposeMesh(b.mesh); bullets.splice(i, 1); continue; }
         b.mesh.position.copy(nextPos); b.dist += speed;
     }
 
@@ -1136,7 +1154,7 @@ function animate() {
         let nextPos = eb.mesh.position.clone().add(eb.dir.clone().multiplyScalar(eb.speed));
         if (checkCollision(nextPos, 0.15) || eb.dist > eb.range) {
             if (eb.dist <= eb.range) createImpact(nextPos, 0x00ff66, 4);
-            scene.remove(eb.mesh); enemyBullets.splice(i, 1); continue;
+            disposeMesh(eb.mesh); enemyBullets.splice(i, 1); continue;
         }
         let blocked = false;
         const sub = eb.dir.clone().multiplyScalar(eb.speed / 3);
@@ -1151,7 +1169,7 @@ function animate() {
                 }
             }
         }
-        if (blocked) { scene.remove(eb.mesh); enemyBullets.splice(i, 1); continue; }
+        if (blocked) { disposeMesh(eb.mesh); enemyBullets.splice(i, 1); continue; }
         if (nextPos.distanceTo(player.position) < 1.0) {
             if (!shielded) {
                 const dmg = eb.damage;
@@ -1166,7 +1184,7 @@ function animate() {
             } else {
                 createImpact(player.position, 0x0088ff, 8);
             }
-            scene.remove(eb.mesh); enemyBullets.splice(i, 1); continue;
+            disposeMesh(eb.mesh); enemyBullets.splice(i, 1); continue;
         }
         eb.mesh.position.copy(nextPos); eb.dist += eb.speed;
     }
@@ -1244,7 +1262,7 @@ function animate() {
                 spawnDrop(e.mesh.position);
             }
 
-            scene.remove(e.mesh); enemies.splice(i, 1); continue;
+            disposeMesh(e.mesh); enemies.splice(i, 1); continue;
         }
 
         let distToPlayer = e.mesh.position.distanceTo(player.position);
@@ -1273,7 +1291,7 @@ function animate() {
                     damageFlashAmount = 1.0; shakeAmount = 0.5; chromaAmount = 1.0;
                 }
                 createImpact(e.mesh.position, 0xff6600, 35);
-                scene.remove(e.mesh); enemies.splice(i, 1); continue;
+                disposeMesh(e.mesh); enemies.splice(i, 1); continue;
             }
             if (distToPlayer < 10) {
                 e.mesh.material.emissiveIntensity = 0.8 + Math.sin(nowMs * 0.015) * 0.7;
@@ -1429,7 +1447,7 @@ function animate() {
             else if (d.type === 'powerup')   applyPowerup(d.powerup);
             else if (d.type === 'secondary') { hasSecondaryWeapon = true; secondaryAmmo = 3; }
             createImpact(d.mesh.position, d.mesh.material.color.getHex(), 15);
-            scene.remove(d.mesh); drops.splice(i, 1);
+            disposeMesh(d.mesh); drops.splice(i, 1);
         }
     }
 
