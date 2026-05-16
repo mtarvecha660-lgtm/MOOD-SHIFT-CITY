@@ -1071,27 +1071,6 @@ ${ai.log.slice(0,4).map(l=>`<div style="color:#223;font-size:8px;line-height:1.5
         else if (active && ++ai.hudTick % 4 === 0) updateHUD();
     }, 500);
 
-    // ─────────────────────────────────────────────────────────────
-    //  POINTER-LOCK PATCH
-    // ─────────────────────────────────────────────────────────────
-    let plPatched = false;
-    function patchPointerLock() {
-        if (plPatched) return;
-        plPatched = true;
-        document.addEventListener('pointerlockchange', () => {
-            // In training mode: always dismiss pause caused by pointer-lock loss
-            if ((active || training) && gameRunning && !document.pointerLockElement) {
-                setTimeout(() => {
-                    if (gamePaused) {
-                        gamePaused = false;
-                        const pm = document.getElementById('pause-menu');
-                        if (pm) pm.style.display = 'none';
-                    }
-                }, 8);
-            }
-        }, true);
-    }
-
     const ready = () => {
         injectUI();
         document.addEventListener('keydown', e => {
