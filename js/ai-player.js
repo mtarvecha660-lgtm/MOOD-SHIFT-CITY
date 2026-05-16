@@ -93,26 +93,47 @@ const NEXUS = (() => {
             else if (hpF < 0.75) s = 200;
             else                 s = 40;
         } else if (d.type === 'ammo') {
-            if      (ammo <= 2 && reserve === 0) s = 900;
-            else if (ammoT < 10)                 s = 500;
-            else if (ammoT < 24)                 s = 150;
-            else                                 s = 40;
+            // Desperate: out of ammo entirely — highest possible priority
+            if      (ammo === 0 && reserve === 0) s = 1100;
+            else if (ammo <= 2 && reserve === 0)  s = 950;
+            else if (ammoT < 10)                  s = 500;
+            else if (ammoT < 24)                  s = 150;
+            else                                  s = 40;
         } else if (d.type === 'secondary') {
             s = 700;
         } else if (d.type === 'powerup') {
-            const vals = { overclock:600, shield:500, rapid:400, speed:250 };
-            s = vals[d.powerup] || 200;
+            const vals = { overclock:600, shield:500, rapid:400, speed:300 };
+            s = vals[d.powerup] || 250;
             if (d.powerup === 'shield'    && enemies && enemies.length > 4) s += 200;
             if (d.powerup === 'overclock' && isBossWave) s += 400;
         }
 
-        s -= dist * 5;
-        if (enemies && enemies.length > 6 && hpF > 0.65 && d.type !== 'hp') s *= 0.3;
+        // Reduced distance penalty (was *5 — too harsh for powerups at mid range)
+        s -= dist * 2.5;
+
+        // Only suppress non-critical non-hp drops during huge enemy swarms,
+        // and never suppress ammo pickups when the AI is out of ammo
+        const ammoEmergency = (d.type === 'ammo' && ammo === 0 && reserve === 0);
+        if (!ammoEmergency && enemies && enemies.length > 6 && hpF > 0.65 && d.type !== 'hp') {
+            s *= 0.6; // was 0.3 — less extreme suppression so powerups still register
+        }
         return s;
     }
 
     function getBestDrop() {
         if (!drops || !drops.length) return null;
+
+        // Emergency ammo override: if completely dry, pick nearest ammo drop regardless of score
+        if (ammo === 0 && reserve === 0) {
+            const ammoDrop = drops
+                .filter(d => d.type === 'ammo')
+                .sort((a, b) =>
+                    player.position.distanceTo(a.mesh.position) -
+                    player.position.distanceTo(b.mesh.position)
+                )[0];
+            if (ammoDrop) return ammoDrop;
+        }
+
         let best = null, bS = -Infinity;
         for (const d of drops) { const s = scoreDrop(d); if (s > bS) { bS = s; best = d; } }
         return (bS > 30) ? best : null;
@@ -247,12 +268,23 @@ const NEXUS = (() => {
 
         if (!enemies || enemies.length === 0)          return dp ? 'SEEK_DROP' : 'IDLE';
         if (closeBomber)                                return 'EVADE_BOMBER';
+
+        // Critical HP — seek HP drop or kite
         if (hpF < 0.28) {
             const hpDrop = drops && drops.find(d => d.type === 'hp');
             return hpDrop ? 'SEEK_DROP' : 'KITE';
         }
-        if (dp && scoreDrop(dp) > 300 &&
-            player.position.distanceTo(dp.mesh.position) < 30) return 'SEEK_DROP';
+
+        // Out of ammo entirely — always seek nearest ammo drop, even mid-combat
+        if (ammo === 0 && reserve === 0) {
+            const ammoDrop = drops && drops.find(d => d.type === 'ammo');
+            if (ammoDrop) return 'SEEK_DROP';
+        }
+
+        // Seek any high-value drop nearby (lowered threshold from 300 to 200 for powerups)
+        if (dp && scoreDrop(dp) > 200 &&
+            player.position.distanceTo(dp.mesh.position) < 35) return 'SEEK_DROP';
+
         if (tgt && tgt.name === 'SNIPER' &&
             player.position.distanceTo(tgt.mesh.position) > 18)  return 'KITE';
 
@@ -302,6 +334,13 @@ const NEXUS = (() => {
         moveWorld(wx, wz);
 
         if (ammo > 0 && !isReloading) shoot();
+        else if (ammo === 0 && reserve === 0) {
+            // Completely out of ammo and no drop yet — kite away from enemies
+            const dx = player.position.x - tgt.mesh.position.x;
+            const dz = player.position.z - tgt.mesh.position.z;
+            const len = Math.sqrt(dx*dx + dz*dz) || 1;
+            moveWorld(dx / len, dz / len);
+        }
         considerRocket(tgt);
     }
 
