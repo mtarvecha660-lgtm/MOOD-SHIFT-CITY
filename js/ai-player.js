@@ -1,11 +1,5 @@
 // ── js/ai_player.js ──
-// NEXUS AI — Tactical Player Controller v2
-//
-// INSTALL:
-//   1. Copy this file to  js/ai_player.js
-//   2. In index.html, after ALL other <script> tags, add:
-//        <script src="js/ai_player.js"></script>
-//   3. In-game press  Alt+A  or click the ▶ NEXUS AI button (bottom-right)
+// NEXUS AI — Tactical Player Controller v3 (Memory Safe)
 
 const NEXUS = (() => {
     'use strict';
@@ -558,13 +552,15 @@ const NEXUS = (() => {
     //  interaction, pointer lock, menus, or game-over screen.
     // ─────────────────────────────────────────────────────────────
     function headlessReset() {
-        // Kill any lingering Three.js renderer from the last run
-        if (typeof renderer !== 'undefined' && renderer) {
-            const old = renderer.domElement;
-            if (old && old.parentNode) old.parentNode.removeChild(old);
+        // Safely dispose of all dynamic meshes before clearing the arrays
+        if (typeof disposeMesh !== 'undefined') {
+            if (typeof enemies !== 'undefined') enemies.forEach(e => disposeMesh(e.mesh));
+            if (typeof bullets !== 'undefined') bullets.forEach(b => disposeMesh(b.mesh));
+            if (typeof enemyBullets !== 'undefined') enemyBullets.forEach(eb => disposeMesh(eb.mesh));
+            if (typeof drops !== 'undefined') drops.forEach(d => disposeMesh(d.mesh));
         }
 
-        // Clear all entity arrays the game uses
+        // Now empty the arrays safely
         if (typeof enemies      !== 'undefined') enemies.length      = 0;
         if (typeof bullets      !== 'undefined') bullets.length      = 0;
         if (typeof enemyBullets !== 'undefined') enemyBullets.length = 0;
