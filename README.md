@@ -224,9 +224,3 @@ Then open `http://localhost:5000` in any modern browser.
 ## License
 
 MIT — do whatever you like with it.
-
----
-
-## AI Setup
-
-This repository is managed by Gemini AI from a mobile phone.
