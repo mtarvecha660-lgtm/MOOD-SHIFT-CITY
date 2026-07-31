@@ -86,7 +86,7 @@
 
 <!-- ══ TUTORIAL ══ -->
 <div id="tutorial-overlay" style="display:none;">
-    <div id="menu-grid"></div>
+    <div class="menu-grid-bg"></div> <!-- Changed from id="menu-grid" to class="menu-grid-bg" to avoid duplicate IDs -->
     <div class="scanlines-overlay"></div>
     <div id="tut-slide-area"></div>
 </div>
@@ -96,7 +96,7 @@
 
 <!-- ══ SETTINGS ══ -->
 <div id="settings" style="display:none;">
-    <div id="menu-grid"></div>
+    <div class="menu-grid-bg"></div> <!-- Changed from id="menu-grid" to class="menu-grid-bg" to avoid duplicate IDs -->
     <div class="scanlines-overlay"></div>
 
     <div id="settings-header">
@@ -139,7 +139,7 @@
 
 <!-- ══ INTEL DATABASE (CODEX) ══ -->
 <div id="codex" style="display:none;">
-    <div id="menu-grid"></div>
+    <div class="menu-grid-bg"></div> <!-- Changed from id="menu-grid" to class="menu-grid-bg" to avoid duplicate IDs -->
     <div class="scanlines-overlay"></div>
 
     <div id="codex-header">
@@ -251,15 +251,17 @@
 <script>
 (function() {
     const rain = document.getElementById('menu-rain');
-    for (let i = 0; i < 40; i++) {
-        const drop = document.createElement('div');
-        drop.className = 'rain-drop';
-        drop.style.left              = Math.random() * 100 + '%';
-        drop.style.animationDuration = (0.6 + Math.random() * 1.2) + 's';
-        drop.style.animationDelay    = (Math.random() * 2) + 's';
-        drop.style.opacity           = 0.15 + Math.random() * 0.25;
-        drop.style.height            = (40 + Math.random() * 60) + 'px';
-        rain.appendChild(drop);
+    if (rain) { // Added a check to ensure 'rain' element exists before trying to append children
+        for (let i = 0; i < 40; i++) {
+            const drop = document.createElement('div');
+            drop.className = 'rain-drop';
+            drop.style.left              = Math.random() * 100 + '%';
+            drop.style.animationDuration = (0.6 + Math.random() * 1.2) + 's';
+            drop.style.animationDelay    = (Math.random() * 2) + 's';
+            drop.style.opacity           = 0.15 + Math.random() * 0.25;
+            drop.style.height            = (40 + Math.random() * 60) + 'px';
+            rain.appendChild(drop);
+        }
     }
 })();
 </script>
