@@ -3,11 +3,12 @@ import sys
 from google import genai
 from google.genai import types
 
-# Initialize the Gemini Client
-client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
+# 1. Initialize the client. 
+# It automatically picks up the GEMINI_API_KEY environment variable.
+client = genai.Client()
 
 def edit_file(prompt, file_path):
-    # Read existing code
+    # 2. Read the existing code safely.
     try:
         with open(file_path, 'r') as file:
             code = file.read()
@@ -15,8 +16,8 @@ def edit_file(prompt, file_path):
         print(f"Error: File '{file_path}' not found.")
         sys.exit(1)
 
-    # Instruct Gemini to only return code
-    sys_instruction = (
+    # 3. Define the instruction. We want raw code back, no markdown.
+    instruction = (
         "You are an automated code editor. You will receive a request and code. "
         "Modify the code according to the request. Return ONLY raw executable code. "
         "Do NOT wrap output in markdown fences (no ```), do NOT add explanations."
@@ -25,19 +26,19 @@ def edit_file(prompt, file_path):
     full_prompt = f"Request: {prompt}\n\nCurrent Code:\n{code}"
 
     try:
-        # Call Gemini model
+        # 4. Make the call using the modern 3.6-flash model and config pattern
         response = client.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-3.6-flash",
             contents=full_prompt,
             config=types.GenerateContentConfig(
-                system_instruction=sys_instruction,
-                temperature=0.2
+                system_instruction=instruction,
+                temperature=0.2,
             )
         )
 
         new_code = response.text.strip()
 
-        # Clean up backticks if the model outputs markdown anyway
+        # 5. Fallback: Clean up markdown backticks just in case the model ignores the instruction
         if new_code.startswith("```"):
             lines = new_code.splitlines()
             if lines[0].startswith("```"):
@@ -46,7 +47,7 @@ def edit_file(prompt, file_path):
                 lines = lines[:-1]
             new_code = "\n".join(lines)
 
-        # Save modified file
+        # 6. Save the modified file
         with open(file_path, 'w') as file:
             file.write(new_code)
 
