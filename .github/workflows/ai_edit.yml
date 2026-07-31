@@ -6,7 +6,6 @@ on:
 
 jobs:
   ai_edit:
-    # Runs whenever a comment starts with /ai-edit
     if: startsWith(github.event.comment.body, '/ai-edit')
     runs-on: ubuntu-latest
     permissions:
@@ -22,28 +21,50 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: Install Google GenAI SDK
-        run: pip install google-genai
+      - name: Install Dependencies
+        run: |
+          pip install google-genai pydantic
 
-      - name: Run Gemini Script
+      - name: Run Gemini Script and Capture Output
+        id: run_ai
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           COMMENT_BODY: ${{ github.event.comment.body }}
         run: |
-          # Extract the target file path (2nd word on line 1)
-          FILE_PATH=$(echo "$COMMENT_BODY" | head -n 1 | awk '{print $2}')
-          
-          # Extract prompt text (lines 2 onwards)
+          FILE_PATHS=$(echo "$COMMENT_BODY" | head -n 1 | sed 's|^/ai-edit ||')
           PROMPT=$(echo "$COMMENT_BODY" | tail -n +2)
           
-          if [ -z "$FILE_PATH" ]; then
-            echo "No target file supplied."
+          if [ -z "$FILE_PATHS" ]; then
+            echo "COMMENT_OUTPUT=❌ **Error:** No target files supplied in the command." >> $GITHUB_ENV
             exit 1
           fi
           
-          python ai_editor.py "$PROMPT" "$FILE_PATH"
+          # Run script and capture all output to a file
+          if python ai_editor.py "$PROMPT" $FILE_PATHS > ai_output.txt 2>&1; then
+            # If successful, extract the report block
+            REPORT=$(sed -n '/===REPORT_START===/,/===REPORT_END===/p' ai_output.txt | sed '1d;$d')
+            
+            # Save multiline string to GitHub ENV variable
+            EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
+            echo "COMMENT_OUTPUT<<$EOF" >> $GITHUB_ENV
+            echo "$REPORT" >> $GITHUB_ENV
+            echo "$EOF" >> $GITHUB_ENV
+          else
+            # If failed, grab the last few lines of the error
+            ERROR_LOG=$(tail -n 5 ai_output.txt)
+            EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
+            echo "COMMENT_OUTPUT<<$EOF" >> $GITHUB_ENV
+            echo "❌ **Script Failed:**" >> $GITHUB_ENV
+            echo "\`\`\`" >> $GITHUB_ENV
+            echo "$ERROR_LOG" >> $GITHUB_ENV
+            echo "\`\`\`" >> $GITHUB_ENV
+            echo "$EOF" >> $GITHUB_ENV
+            exit 1
+          fi
 
       - name: Commit and Push Changes
+        # Only try to commit if the previous step succeeded
+        if: success() 
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
@@ -52,17 +73,20 @@ jobs:
           if git diff --staged --quiet; then
             echo "No changes made."
           else
-            git commit -m "AI Edit: Modified $FILE_PATH from issue comment"
+            git commit -m "AI Edit: Applied changes via Gemini"
             git push
           fi
 
-      - name: Respond to Issue
+      - name: Respond to Issue (Success or Failure)
+        # always() ensures this runs even if previous steps failed
+        if: always() 
         uses: actions/github-script@v7
         with:
           script: |
+            const output = process.env.COMMENT_OUTPUT || "⚠️ Unknown error occurred during execution.";
             github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: '✨ Gemini has modified the file and pushed the changes to your repository!'
+              body: output
             })
