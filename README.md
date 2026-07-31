@@ -183,6 +183,29 @@ Open from the main menu. Browse full stats, descriptions, and 3D previews of eve
 
 ---
 
+## Sample
+
+### Code Analysis & Error Diagnostics (`js/game.js`)
+
+An analysis of `js/game.js` revealed several bugs and issues that were identified and resolved:
+
+1. **Uncleared Memory Arrays on Initialization (`buildings` & `particles`)**:
+   - **Issue**: In `init()`, global arrays `buildings` and `particles` were populated using `.push()` without being cleared first.
+   - **Impact**: Restarting runs without refreshing the browser accumulated building bounding boxes and particle meshes, leading to performance degradation.
+   - **Fix**: Clear `buildings`, `particles`, `enemies`, `bullets`, `enemyBullets`, and `drops` arrays inside `init()`.
+
+2. **Unchecked DOM References (`wave-bonus`, `menu-hs`)**:
+   - **Issue**: Functions like `showWaveBonus()` and top-level scripts referenced elements like `wave-bonus` or `menu-hs` without checking if they existed in the DOM.
+   - **Impact**: Threw uncaught `TypeError` exceptions if the element was missing or not yet loaded.
+   - **Fix**: Added null-guard checks before accessing properties (`if (el) ...`).
+
+3. **Missing Boss Identification Stats (`name` & `colorHex`)**:
+   - **Issue**: Boss entities spawned in `spawnEnemy()` lacked explicit `name` and `colorHex` properties on the enemy object.
+   - **Impact**: Queries to `enemy.name` or `enemy.colorHex` returned `undefined` during boss events.
+   - **Fix**: Explicitly assigned `name: 'OVERLORD'` and `colorHex: '#ff4400'` when spawning boss objects.
+
+---
+
 ## File Structure
 
 ```
