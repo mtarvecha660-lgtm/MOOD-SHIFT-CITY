@@ -1,68 +1,14 @@
-name: Gemini Mobile AI Editor
-
-on:
-  issue_comment:
-    types: [created]
-
-jobs:
-  ai_edit:
-    # Runs whenever a comment starts with /ai-edit
-    if: startsWith(github.event.comment.body, '/ai-edit')
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      issues: write
-
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-
-      - name: Install Google GenAI SDK
-        run: pip install google-genai
-
       - name: Run Gemini Script
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           COMMENT_BODY: ${{ github.event.comment.body }}
         run: |
-          # Extract the target file path (2nd word on line 1)
-          FILE_PATH=$(echo "$COMMENT_BODY" | head -n 1 | awk '{print $2}')
+          # Remove "/ai-edit" command and pass the rest as the prompt
+          PROMPT=$(echo "$COMMENT_BODY" | sed 's|^/ai-edit||' | xargs)
           
-          # Extract prompt text (lines 2 onwards)
-          PROMPT=$(echo "$COMMENT_BODY" | tail -n +2)
-          
-          if [ -z "$FILE_PATH" ]; then
-            echo "No target file supplied."
+          if [ -z "$PROMPT" ]; then
+            echo "No prompt supplied."
             exit 1
           fi
           
-          python ai_editor.py "$PROMPT" "$FILE_PATH"
-
-      - name: Commit and Push Changes
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add .
-          
-          if git diff --staged --quiet; then
-            echo "No changes made."
-          else
-            git commit -m "AI Edit: Modified $FILE_PATH from issue comment"
-            git push
-          fi
-
-      - name: Respond to Issue
-        uses: actions/github-script@v7
-        with:
-          script: |
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: '✨ Gemini has modified the file and pushed the changes to your repository!'
-            })
+          python ai_editor.py "$PROMPT"
