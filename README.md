@@ -2,7 +2,7 @@
 
 # Mood Shift City: Ultra Vis
 
-**The original browser shooter in the Mood Shift City series: a first-person city defence in Three.js, no install, no build step.**
+**The original browser shooter in the Mood Shift City series: a wave-based first-person shooter in Three.js, no install, no build step.**
 
 ![Three.js](https://img.shields.io/badge/3D-Three.js%20r128-000000?logo=threedotjs&logoColor=white)
 ![JavaScript](https://img.shields.io/badge/stack-vanilla%20JS-F7DF1E?logo=javascript&logoColor=black)
