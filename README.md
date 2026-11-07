@@ -1,8 +1,18 @@
+<div align="center">
+
 # Mood Shift City: Ultra Vis
 
-> Urban Combat Protocol v4.2 — High-Vis Protocol Enabled
+**The original browser shooter in the Mood Shift City series: a first-person city defence in Three.js, no install, no build step.**
 
-A browser-based first-person shooter built with vanilla HTML, CSS, and JavaScript using Three.js. No install, no build step — just open and play.
+![Three.js](https://img.shields.io/badge/3D-Three.js%20r128-000000?logo=threedotjs&logoColor=white)
+![JavaScript](https://img.shields.io/badge/stack-vanilla%20JS-F7DF1E?logo=javascript&logoColor=black)
+![Status](https://img.shields.io/badge/status-playable-blue)
+
+[**Play in your browser**](https://mtarvecha660-lgtm.github.io/MOOD-SHIFT-CITY/) · [Newer Golden Hour build](https://github.com/mtarvecha660-lgtm/Mood-city)
+
+</div>
+
+> Urban Combat Protocol v4.2 — High-Vis Protocol Enabled
 
 ---
 
@@ -221,6 +231,3 @@ Then open `http://localhost:5000` in any modern browser.
 
 ---
 
-## License
-
-MIT — do whatever you like with it.
