@@ -8,6 +8,10 @@
 ![JavaScript](https://img.shields.io/badge/stack-vanilla%20JS-F7DF1E?logo=javascript&logoColor=black)
 ![Status](https://img.shields.io/badge/status-playable-blue)
 
+<p align="center">
+  <img src="docs/screenshot.png" alt="Mood Shift City browser shooter title screen" width="720">
+</p>
+
 [**Play in your browser**](https://mtarvecha660-lgtm.github.io/MOOD-SHIFT-CITY/) · [Newer Golden Hour build](https://github.com/mtarvecha660-lgtm/Mood-city)
 
 </div>
